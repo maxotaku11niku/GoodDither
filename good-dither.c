@@ -71,6 +71,16 @@ property_double (chromabias, _("Chroma Bias"),  1.0)
     value_range (0.1, 3.0)
     ui_range    (0.5, 2.0)
 
+property_double (postBright, _("Post-brightness"),  0.0)
+    description (_("Brightness adjustment applied just before finding the best colour."))
+    value_range (-1.0, 1.0)
+    ui_range    (-1.0, 1.0)
+
+property_double (postContrast, _("Post-contrast"),  0.0)
+    description (_("Contrast adjustment applied just before finding the best colour."))
+    value_range (-1.0, 1.0)
+    ui_range    (-1.0, 1.0)
+
 property_boolean (boustrophedon, _("Boustrophedon Scanning"), FALSE)
     description (_("Use back-and-forth scanning in error diffusion dithering."))
 
@@ -458,8 +468,8 @@ ColourRGBA* srcpalette;
 ColourOkLabA* palette;
 Babl* space;
 
-typedef ColourRGBA OrderedDitherFunction(ColourOkLabA, int, int, float, float, float, float);
-typedef ColourOkLabA ErrorDiffusionDitherFunction(ColourOkLabA, int, int, int, float, float, ColourOkLabA*, int);
+typedef ColourRGBA OrderedDitherFunction(ColourOkLabA, int, int, float, float, float, float, float, float);
+typedef ColourOkLabA ErrorDiffusionDitherFunction(ColourOkLabA, int, int, int, float, float, float, float, ColourOkLabA*, int);
 
 static inline ColourRGBA SRGBToLinear(ColourRGBA c)
 {
@@ -517,10 +527,23 @@ static ColourRGBA OkLabToSRGB(ColourOkLabA c)
     return outcol;
 }
 
-static ColourRGBA GetClosestColourOkLab(ColourOkLabA col, float uvbias)
+static ColourOkLabA ColourAdjust(ColourOkLabA c, float bright, float contrast)
+{
+    c.L += bright;
+
+    float contrastfac = (1.05f * (contrast + 1.0f)) / (1.05f - contrast);
+    c.L -= 0.5f;
+    c.L *= contrastfac; c.a *= contrastfac; c.b *= contrastfac;
+    c.L += 0.5f;
+
+    return c;
+}
+
+static ColourRGBA GetClosestColourOkLab(ColourOkLabA col, float bright, float contrast, float uvbias)
 {
     float lowestDistance = 999999999999999999999999.9;
     int chosenColour = 0;
+    col = ColourAdjust(col, bright, contrast);
     for (int i = 0; i < palSize; i++)
     {
         const ColourOkLabA incol = palette[i];
@@ -537,16 +560,17 @@ static ColourRGBA GetClosestColourOkLab(ColourOkLabA col, float uvbias)
     return srcpalette[chosenColour];
 }
 
-static ColourOkLabA GetClosestColourOkLabWithError(ColourOkLabA col, ColourOkLabA* error, float uvbias)
+static ColourOkLabA GetClosestColourOkLabWithError(ColourOkLabA col, ColourOkLabA* error, float bright, float contrast, float uvbias)
 {
     float lowestDistance = 999999999999999999999999.9;
     int chosenColour = 0;
+    ColourOkLabA postcol = ColourAdjust(col, bright, contrast);
     for (int i = 0; i < palSize; i++)
     {
         const ColourOkLabA incol = palette[i];
-        const float dL = (col.L - incol.L) * uvbias;
-        const float da = col.a - incol.a;
-        const float db = col.b - incol.b;
+        const float dL = (postcol.L - incol.L) * uvbias;
+        const float da = postcol.a - incol.a;
+        const float db = postcol.b - incol.b;
         const float dist = (dL * dL) + (da * da) + (db * db);
         if (dist < lowestDistance)
         {
@@ -562,7 +586,7 @@ static ColourOkLabA GetClosestColourOkLabWithError(ColourOkLabA col, ColourOkLab
     return outcol;
 }
 
-static ColourRGBA OrderedDitherBayer2x2(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float uvbias)
+static ColourRGBA OrderedDitherBayer2x2(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float bright, float contrast, float uvbias)
 {
     col.L += bayer2x2[(y % 2) * 2 + (x % 2)] * amtL;
     float sat = sqrtf(col.a * col.a + col.b * col.b);
@@ -573,10 +597,10 @@ static ColourRGBA OrderedDitherBayer2x2(ColourOkLabA col, int x, int y, float am
     hue += amtH * bayer4x4[((y + 1) % 2) * 2 + (x % 2)];
     col.a = sat * cosf(hue);
     col.b = sat * sinf(hue);
-    return GetClosestColourOkLab(col, uvbias);
+    return GetClosestColourOkLab(col, bright, contrast, uvbias);
 }
 
-static ColourRGBA OrderedDitherBayer4x4(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float uvbias)
+static ColourRGBA OrderedDitherBayer4x4(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float bright, float contrast, float uvbias)
 {
     col.L += bayer4x4[(y % 4) * 4 + (x % 4)] * amtL;
     float sat = sqrtf(col.a * col.a + col.b * col.b);
@@ -587,10 +611,10 @@ static ColourRGBA OrderedDitherBayer4x4(ColourOkLabA col, int x, int y, float am
     hue += amtH * bayer4x4[((y + 1) % 4) * 4 + ((x + 2) % 4)];
     col.a = sat * cosf(hue);
     col.b = sat * sinf(hue);
-    return GetClosestColourOkLab(col, uvbias);
+    return GetClosestColourOkLab(col, bright, contrast, uvbias);
 }
 
-static ColourRGBA OrderedDitherBayer8x8(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float uvbias)
+static ColourRGBA OrderedDitherBayer8x8(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float bright, float contrast, float uvbias)
 {
     col.L += bayer8x8[(y % 8) * 8 + (x % 8)] * amtL;
     float sat = sqrtf(col.a * col.a + col.b * col.b);
@@ -601,10 +625,10 @@ static ColourRGBA OrderedDitherBayer8x8(ColourOkLabA col, int x, int y, float am
     hue += amtH * bayer8x8[((y + 3) % 8) * 8 + ((x + 4) % 8)];
     col.a = sat * cosf(hue);
     col.b = sat * sinf(hue);
-    return GetClosestColourOkLab(col, uvbias);
+    return GetClosestColourOkLab(col, bright, contrast, uvbias);
 }
 
-static ColourRGBA OrderedDitherBayer16x16(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float uvbias)
+static ColourRGBA OrderedDitherBayer16x16(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float bright, float contrast, float uvbias)
 {
     col.L += bayer16x16[(y % 16) * 16 + (x % 16)] * amtL;
     float sat = sqrtf(col.a * col.a + col.b * col.b);
@@ -615,10 +639,10 @@ static ColourRGBA OrderedDitherBayer16x16(ColourOkLabA col, int x, int y, float 
     hue += amtH * bayer16x16[((y + 10) % 16) * 16 + ((x + 1) % 16)];
     col.a = sat * cosf(hue);
     col.b = sat * sinf(hue);
-    return GetClosestColourOkLab(col, uvbias);
+    return GetClosestColourOkLab(col, bright, contrast, uvbias);
 }
 
-static ColourRGBA OrderedDitherVoid16x16(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float uvbias)
+static ColourRGBA OrderedDitherVoid16x16(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float bright, float contrast, float uvbias)
 {
     int matind = (y % 16) * 16 + (x % 16);
     col.L += void16x16_1[matind] * amtL;
@@ -630,15 +654,15 @@ static ColourRGBA OrderedDitherVoid16x16(ColourOkLabA col, int x, int y, float a
     hue += amtH * void16x16_3[matind];
     col.a = sat * cosf(hue);
     col.b = sat * sinf(hue);
-    return GetClosestColourOkLab(col, uvbias);
+    return GetClosestColourOkLab(col, bright, contrast, uvbias);
 }
 
-static ColourOkLabA DitherFloydSteinberg(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherFloydSteinberg(ColourOkLabA col, int x, int y, int w, float amt, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     diffCol = &diffErr[(x + boustro) +  y * w];
     float coeff = 0.4375f * amt;
@@ -656,12 +680,12 @@ static ColourOkLabA DitherFloydSteinberg(ColourOkLabA col, int x, int y, int w, 
     return outcol;
 }
 
-static ColourOkLabA DitherFloydFalse(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherFloydFalse(ColourOkLabA col, int x, int y, int w, float amt, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = 0.375f * amt;
     diffCol = &diffErr[(x + boustro) +  y * w];
@@ -675,12 +699,12 @@ static ColourOkLabA DitherFloydFalse(ColourOkLabA col, int x, int y, int w, floa
     return outcol;
 }
 
-static ColourOkLabA DitherJJN(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherJJN(ColourOkLabA col, int x, int y, int w, float amt, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = (7.0f/48.0f) * amt;
     diffCol = &diffErr[(x + boustro) +  y * w];
@@ -718,12 +742,12 @@ static ColourOkLabA DitherJJN(ColourOkLabA col, int x, int y, int w, float amt, 
     return outcol;
 }
 
-static ColourOkLabA DitherStucki(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherStucki(ColourOkLabA col, int x, int y, int w, float amt, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = (8.0f/42.0f) * amt;
     diffCol = &diffErr[(x + boustro) +  y * w];
@@ -761,12 +785,12 @@ static ColourOkLabA DitherStucki(ColourOkLabA col, int x, int y, int w, float am
     return outcol;
 }
 
-static ColourOkLabA DitherBurkes(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherBurkes(ColourOkLabA col, int x, int y, int w, float amt, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = (8.0f/32.0f) * amt;
     diffCol = &diffErr[(x + boustro) +  y * w];
@@ -791,12 +815,12 @@ static ColourOkLabA DitherBurkes(ColourOkLabA col, int x, int y, int w, float am
     return outcol;
 }
 
-static ColourOkLabA DitherSierra(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherSierra(ColourOkLabA col, int x, int y, int w, float amt, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = (5.0f/32.0f) * amt;
     diffCol = &diffErr[(x + boustro) +  y * w];
@@ -829,12 +853,12 @@ static ColourOkLabA DitherSierra(ColourOkLabA col, int x, int y, int w, float am
     return outcol;
 }
 
-static ColourOkLabA DitherSierra2Row(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherSierra2Row(ColourOkLabA col, int x, int y, int w, float amt, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = (4.0f/16.0f) * amt;
     diffCol = &diffErr[(x + boustro) +  y * w];
@@ -861,12 +885,12 @@ static ColourOkLabA DitherSierra2Row(ColourOkLabA col, int x, int y, int w, floa
     return outcol;
 }
 
-static ColourOkLabA DitherFilterLite(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherFilterLite(ColourOkLabA col, int x, int y, int w, float amt, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = 0.5f * amt;
     diffCol = &diffErr[(x + boustro) +  y * w];
@@ -880,12 +904,12 @@ static ColourOkLabA DitherFilterLite(ColourOkLabA col, int x, int y, int w, floa
     return outcol;
 }
 
-static ColourOkLabA DitherAtkinson(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherAtkinson(ColourOkLabA col, int x, int y, int w, float amt, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     const float coeff = amt / 6.0f; //Note: the canonical Atkinson dither only diffuses 3/4 of the error, but we'll normalise this one anyway
     diffCol = &diffErr[(x + boustro)     +  y * w];
@@ -1018,6 +1042,8 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
     gfloat ditAmtH = props->ditherAmountH;
     gfloat ditAmtE = props->ditherAmountE;
     gfloat cbias = props->chromabias;
+    gfloat postB = props->postBright;
+    gfloat postC = props->postContrast;
     gboolean globBoustro = props->boustrophedon;
 
     //Allocate buffers
@@ -1092,7 +1118,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             {
                 const glong index = i * w + j;
                 ColourOkLabA incol = SRGBToOkLab(pixel[index]);
-                pixel[index] = odfunc(incol, j + x, i + y, ditAmtL, ditAmtS, ditAmtH, cbias);
+                pixel[index] = odfunc(incol, j + x, i + y, ditAmtL, ditAmtS, ditAmtH, postB, postC, cbias);
             }
         }
     }
@@ -1114,7 +1140,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
                 {
                     const glong index = i * w + j;
                     ColourOkLabA incol = SRGBToOkLab(expandedInput[index]);
-                    expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtE, cbias, diffusedError, -1));
+                    expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtE, postB, postC, cbias, diffusedError, -1));
                 }
             }
             else
@@ -1123,7 +1149,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
                 {
                     const glong index = i * w + j;
                     ColourOkLabA incol = SRGBToOkLab(expandedInput[index]);
-                    expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtE, cbias, diffusedError, 1));
+                    expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtE, postB, postC, cbias, diffusedError, 1));
                 }
             }
         }
