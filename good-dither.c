@@ -11,8 +11,31 @@ enum_value(JJN, "jjn", "Jarvis-Judice-Ninke")
 enum_value(ATKINSON, "atkinson", "Atkinson")
 enum_end(ditherMethods)
 
-property_enum (ditherMethod, _("Dither Method"), ditherMethods, ditherMethods, 0)
+enum_start(palettes)
+enum_value(I1, "i1", "Black and white (2 colours)")
+enum_value(R1G1B1, "r1g1b1", "R1G1B1 (8 colours)")
+enum_value(R1G1B1I1, "r1g1b1i1", "R1G1B1I1 (16 colours)")
+enum_value(R2G2B2, "r2g2b2", "R2G2B2 (64 colours)")
+enum_value(R3G3B3, "r3g3b3", "R3G3B3 (512 colours)")
+enum_value(MY16, "my16", "My 16 colours")
+enum_value(MSWINDOWS, "windows", "Windows 3/9x/2000 default (16 colours)")
+enum_value(MAC2, "mac2", "Mac II default (16 colours)")
+enum_value(RISCOS, "riscos", "RISC OS 2/3 default (16 colours)")
+enum_value(APPLE2_6, "apple2_6", "Apple II default (6 colours)")
+enum_value(APPLE2_15, "apple2_15", "Apple II default (15 colours)")
+enum_value(C64, "c64", "Commodore 64 default (16 colours)")
+enum_value(MSX, "msx", "MSX default (15 colours)")
+enum_value(INTELLIVISION, "intellivision", "Intellivision default (16 colours)")
+enum_value(GB, "gameboy", "Game Boy default approximation (4 colours)")
+enum_value(ADAPTIVE, "adaptive", "Adaptive (find best colours for this image)")
+enum_value(FROMFILE, "file", "From file (load .gpl file)")
+enum_end(palettes)
+
+property_enum (ditherMethod, _("Dither Method"), ditherMethods, ditherMethods, 1)
     description (_("Choose from a variety of dithering methods, both ordered and error-diffusing."))
+
+property_enum (curpal, _("Palette"), palettes, palettes, 5)
+    description (_("Choose the palette you want to use."))
 
 property_double (ditherAmountL, _("Luminosity Dither"),  0.5)
     description (_("Magnitude of dither effect on the luminosity."))
@@ -49,6 +72,14 @@ property_boolean (boustrophedon, _("Boustrophedon Scanning"), FALSE)
 //Type definitions
 typedef struct
 {
+    unsigned char R;
+    unsigned char G;
+    unsigned char B;
+    unsigned char A;
+} ColourRGBA8;
+
+typedef struct
+{
     float R;
     float G;
     float B;
@@ -71,13 +102,33 @@ enum_value(JJN, "jjn", "Jarvis-Judice-Ninke")
 enum_value(ATKINSON, "atkinson", "Atkinson")
 enum_end(ditherMethods)
 
+enum_start(palettes)
+enum_value(I1, "i1", "Black and white (2 colours)")
+enum_value(R1G1B1, "r1g1b1", "R1G1B1 (8 colours)")
+enum_value(R1G1B1I1, "r1g1b1i1", "R1G1B1I1 (16 colours)")
+enum_value(R2G2B2, "r2g2b2", "R2G2B2 (64 colours)")
+enum_value(R3G3B3, "r3g3b3", "R3G3B3 (512 colours)")
+enum_value(MY16, "my16", "My 16 colours")
+enum_value(MSWINDOWS, "windows", "Windows 3/9x/2000 default (16 colours)")
+enum_value(MAC2, "mac2", "Mac II default (16 colours)")
+enum_value(RISCOS, "riscos", "RISC OS 2/3 default (16 colours)")
+enum_value(APPLE2_6, "apple2_6", "Apple II default (6 colours)")
+enum_value(APPLE2_15, "apple2_15", "Apple II default (15 colours)")
+enum_value(C64, "c64", "Commodore 64 default (16 colours)")
+enum_value(MSX, "msx", "MSX default (15 colours)")
+enum_value(INTELLIVISION, "intellivision", "Intellivision default (16 colours)")
+enum_value(GB, "gameboy", "Game Boy default approximation (4 colours)")
+enum_value(ADAPTIVE, "adaptive", "Adaptive (find best colours for this image)")
+enum_value(FROMFILE, "file", "From file (load .gpl file)")
+enum_end(palettes)
+
 //Controls the amount to expand any ROI in each direction in order to give some "burn in" to error diffusion
 //This allows parallel processing and prevents artifacts appearing at the top of images
 #define EDD_EXPAND_X        10
 #define EDD_EXPAND_Y_TOP    10
 #define EDD_EXPAND_Y_BOTTOM 4
 
-//OkLab constants
+/** OkLab constants **/
 const float OkLabK1 = 0.206f;
 const float OkLabK2 = 0.03f;
 const float OkLabK3 = 1.17087378640776f;
@@ -98,6 +149,7 @@ const float LMStoSRGB[9] = { 4.0767416621f, -3.3077115913f,  0.2309699292f,
                             -1.2684380046f,  2.6097574011f, -0.3413193965f,
                             -0.0041960863f, -0.7034186147f,  1.7076147010f };
 
+/** Ordered dither matrices **/
 const float bayer2x2[4] = { -0.5f,  0.25f,
                              0.0f, -0.25f };
 
@@ -106,25 +158,197 @@ const float bayer4x4[16] = { -0.5f,   0.25f, -0.3125f, 0.4375f,
                              -0.375f, 0.375f,-0.4375f, 0.3125f,
                               0.125f,-0.125f, 0.0625f,-0.1875f };
 
-const unsigned char testPal[16 * 3] = { 0x11, 0x11, 0x11,
-                                        0x77, 0x77, 0x77,
-                                        0xBB, 0x33, 0xBB,
-                                        0xFF, 0x77, 0xFF,
-                                        0x77, 0x11, 0x11,
-                                        0xDD, 0x44, 0x44,
-                                        0xFF, 0xBB, 0x77,
-                                        0xCC, 0xBB, 0x33,
-                                        0x22, 0x77, 0x33,
-                                        0x55, 0xDD, 0x55,
-                                        0x88, 0xFF, 0x55,
-                                        0xFF, 0xFF, 0x66,
-                                        0x33, 0x33, 0xBB,
-                                        0x33, 0xAA, 0xFF,
-                                        0x99, 0xFF, 0xFF,
-                                        0xFF, 0xFF, 0xFF };
+/** Built-in palettes (hardware palettes are converted to sRGB)**/
+// This section only contains master palettes that can be fully used, in order to prevent misleading use (such as dithering for the NES's master palette, which cannot fully be used for a single frame without silly scanline tricks)
+// If you want to use a different palette that's not listed here, put it in a .gpl file (coming soon)
 
-const int palSize = 16;
+const ColourRGBA8 i1Palette[2] = { { 0x00, 0x00, 0x00, 0xFF },
+                                   { 0xFF, 0xFF, 0xFF, 0xFF } };
 
+const ColourRGBA8 r1g1b1Palette[8] = { { 0x00, 0x00, 0x00, 0xFF },
+                                       { 0xFF, 0x00, 0x00, 0xFF },
+                                       { 0x00, 0xFF, 0x00, 0xFF },
+                                       { 0xFF, 0xFF, 0x00, 0xFF },
+                                       { 0x00, 0x00, 0xFF, 0xFF },
+                                       { 0xFF, 0x00, 0xFF, 0xFF },
+                                       { 0x00, 0xFF, 0xFF, 0xFF },
+                                       { 0xFF, 0xFF, 0xFF, 0xFF } };
+
+const ColourRGBA8 r1g1b1i1Palette[16] = { { 0x00, 0x00, 0x00, 0xFF },
+                                          { 0x80, 0x00, 0x00, 0xFF },
+                                          { 0x00, 0x80, 0x00, 0xFF },
+                                          { 0x80, 0x80, 0x00, 0xFF },
+                                          { 0x00, 0x00, 0x80, 0xFF },
+                                          { 0x80, 0x00, 0x80, 0xFF },
+                                          { 0x00, 0x80, 0x80, 0xFF },
+                                          { 0x55, 0x55, 0x55, 0xFF },
+                                          { 0xAA, 0xAA, 0xAA, 0xFF },
+                                          { 0xFF, 0x00, 0x00, 0xFF },
+                                          { 0x00, 0xFF, 0x00, 0xFF },
+                                          { 0xFF, 0xFF, 0x00, 0xFF },
+                                          { 0x00, 0x00, 0xFF, 0xFF },
+                                          { 0xFF, 0x00, 0xFF, 0xFF },
+                                          { 0x00, 0xFF, 0xFF, 0xFF },
+                                          { 0xFF, 0xFF, 0xFF, 0xFF } };
+
+//RGB palettes beyond this are generated algorithmically
+
+//A 16-colour palette that I use a lot
+const ColourRGBA8 my16Palette[16] = { { 0x11, 0x11, 0x11, 0xFF },
+                                      { 0x77, 0x77, 0x77, 0xFF },
+                                      { 0xBB, 0x33, 0xBB, 0xFF },
+                                      { 0xFF, 0x77, 0xFF, 0xFF },
+                                      { 0x77, 0x11, 0x11, 0xFF },
+                                      { 0xDD, 0x44, 0x44, 0xFF },
+                                      { 0xFF, 0xBB, 0x77, 0xFF },
+                                      { 0xCC, 0xBB, 0x33, 0xFF },
+                                      { 0x22, 0x77, 0x33, 0xFF },
+                                      { 0x55, 0xDD, 0x55, 0xFF },
+                                      { 0x88, 0xFF, 0x55, 0xFF },
+                                      { 0xFF, 0xFF, 0x66, 0xFF },
+                                      { 0x33, 0x33, 0xBB, 0xFF },
+                                      { 0x33, 0xAA, 0xFF, 0xFF },
+                                      { 0x99, 0xFF, 0xFF, 0xFF },
+                                      { 0xFF, 0xFF, 0xFF, 0xFF } };
+
+//Palettes for OSes
+
+const ColourRGBA8 windowsPalette[16] = { { 0x00, 0x00, 0x00, 0xFF },
+                                         { 0x80, 0x00, 0x00, 0xFF },
+                                         { 0x00, 0x80, 0x00, 0xFF },
+                                         { 0x80, 0x80, 0x00, 0xFF },
+                                         { 0x00, 0x00, 0x80, 0xFF },
+                                         { 0x80, 0x00, 0x80, 0xFF },
+                                         { 0x00, 0x80, 0x80, 0xFF },
+                                         { 0xC0, 0xC0, 0xC0, 0xFF },
+                                         { 0x80, 0x80, 0x80, 0xFF },
+                                         { 0xFF, 0x00, 0x00, 0xFF },
+                                         { 0x00, 0xFF, 0x00, 0xFF },
+                                         { 0xFF, 0xFF, 0x00, 0xFF },
+                                         { 0x00, 0x00, 0xFF, 0xFF },
+                                         { 0xFF, 0x00, 0xFF, 0xFF },
+                                         { 0x00, 0xFF, 0xFF, 0xFF },
+                                         { 0xFF, 0xFF, 0xFF, 0xFF } };
+
+const ColourRGBA8 mac2Palette[16] = { { 0xFF, 0xFF, 0xFF, 0xFF },
+                                      { 0xFC, 0xF4, 0x00, 0xFF },
+                                      { 0xFF, 0x64, 0x00, 0xFF },
+                                      { 0xDD, 0x02, 0x02, 0xFF },
+                                      { 0xF1, 0x02, 0x85, 0xFF },
+                                      { 0x46, 0x00, 0xA6, 0xFF },
+                                      { 0x00, 0x00, 0xD5, 0xFF },
+                                      { 0x00, 0xAE, 0xE9, 0xFF },
+                                      { 0x1A, 0xB9, 0x0C, 0xFF },
+                                      { 0x00, 0x64, 0x08, 0xFF },
+                                      { 0x58, 0x28, 0x00, 0xFF },
+                                      { 0x91, 0x71, 0x35, 0xFF },
+                                      { 0xC1, 0xC1, 0xC1, 0xFF },
+                                      { 0x81, 0x81, 0x81, 0xFF },
+                                      { 0x3E, 0x3E, 0x3E, 0xFF },
+                                      { 0x00, 0x00, 0x00, 0xFF } };
+
+const ColourRGBA8 riscosPalette[16] = { { 0xFF, 0xFF, 0xFF, 0xFF },
+                                        { 0xDD, 0xDD, 0xDD, 0xFF },
+                                        { 0xBD, 0xBD, 0xBD, 0xFF },
+                                        { 0x99, 0x99, 0x99, 0xFF },
+                                        { 0x79, 0x79, 0x79, 0xFF },
+                                        { 0x53, 0x53, 0x53, 0xFF },
+                                        { 0x31, 0x31, 0x31, 0xFF },
+                                        { 0x00, 0x00, 0x00, 0xFF },
+                                        { 0x00, 0x42, 0x99, 0xFF },
+                                        { 0xF0, 0xF0, 0x00, 0xFF },
+                                        { 0x00, 0xCD, 0x00, 0xFF },
+                                        { 0xDD, 0x00, 0x00, 0xFF },
+                                        { 0xF0, 0xF0, 0xBD, 0xFF },
+                                        { 0x53, 0x89, 0x00, 0xFF },
+                                        { 0xFF, 0xBD, 0x00, 0xFF },
+                                        { 0x00, 0xBD, 0xFF, 0xFF } };
+
+//Palettes for PCs
+
+const ColourRGBA8 apple2_6Palette[6] = { { 0x01, 0x01, 0x01, 0xFF },
+                                         { 0xFF, 0x6B, 0xFD, 0xFF },
+                                         { 0x15, 0xF5, 0x3D, 0xFF },
+                                         { 0x15, 0xCF, 0xFD, 0xFF },
+                                         { 0xFF, 0x6B, 0x3D, 0xFF },
+                                         { 0xFF, 0xFF, 0xFF, 0xFF } };
+
+const ColourRGBA8 apple2_15Palette[15] = { { 0x00, 0x00, 0x00, 0xFF },
+                                           { 0x85, 0x3B, 0x51, 0xFF },
+                                           { 0x50, 0x47, 0x89, 0xFF },
+                                           { 0xEA, 0x5D, 0xF0, 0xFF },
+                                           { 0x00, 0x68, 0x52, 0xFF },
+                                           { 0x92, 0x92, 0x92, 0xFF },
+                                           { 0x00, 0xA8, 0xF1, 0xFF },
+                                           { 0xCA, 0xC3, 0xF8, 0xFF },
+                                           { 0x51, 0x5C, 0x0F, 0xFF },
+                                           { 0xEB, 0x7F, 0x23, 0xFF },
+                                           { 0xF6, 0xB9, 0xCA, 0xFF },
+                                           { 0x00, 0xCA, 0x29, 0xFF },
+                                           { 0xCB, 0xD3, 0x9B, 0xFF },
+                                           { 0x9A, 0xDC, 0xCB, 0xFF },
+                                           { 0xFF, 0xFF, 0xFF, 0xFF } };
+
+const ColourRGBA8 c64Palette[16] = { { 0x00, 0x00, 0x00, 0xFF },
+                                     { 0xFF, 0xFF, 0xFF, 0xFF },
+                                     { 0xA1, 0x4D, 0x43, 0xFF },
+                                     { 0x6A, 0xC1, 0xC8, 0xFF },
+                                     { 0xA2, 0x57, 0xA5, 0xFF },
+                                     { 0x5C, 0xAD, 0x5F, 0xFF },
+                                     { 0x50, 0x44, 0x9C, 0xFF },
+                                     { 0xCD, 0xD6, 0x89, 0xFF },
+                                     { 0xA3, 0x68, 0x3A, 0xFF },
+                                     { 0x6E, 0x53, 0x0B, 0xFF },
+                                     { 0xCC, 0x7F, 0x76, 0xFF },
+                                     { 0x63, 0x63, 0x63, 0xFF },
+                                     { 0x8B, 0x8B, 0x8B, 0xFF },
+                                     { 0x9B, 0xE3, 0x9D, 0xFF },
+                                     { 0x8A, 0x7F, 0xCD, 0xFF },
+                                     { 0xAF, 0xAF, 0xAF, 0xFF } };
+
+const ColourRGBA8 msxPalette[15] = { { 0x00, 0x00, 0x00, 0xFF },
+                                     { 0x3E, 0xB8, 0x49, 0xFF },
+                                     { 0x74, 0xD0, 0x7D, 0xFF },
+                                     { 0x59, 0x55, 0xE0, 0xFF },
+                                     { 0x80, 0x76, 0xF1, 0xFF },
+                                     { 0xB9, 0x5E, 0x51, 0xFF },
+                                     { 0x65, 0xDB, 0xEF, 0xFF },
+                                     { 0xDB, 0x65, 0x59, 0xFF },
+                                     { 0xFF, 0x89, 0x7D, 0xFF },
+                                     { 0xCC, 0xC3, 0x5E, 0xFF },
+                                     { 0xDE, 0xD0, 0x87, 0xFF },
+                                     { 0x3A, 0xA2, 0x41, 0xFF },
+                                     { 0xB7, 0x66, 0xB5, 0xFF },
+                                     { 0xCC, 0xCC, 0xCC, 0xFF },
+                                     { 0xFF, 0xFF, 0xFF, 0xFF } };
+
+//Palettes for consoles
+
+const ColourRGBA8 intellivisionPalette[16] = { { 0x00, 0x00, 0x00, 0xFF },
+                                               { 0x00, 0x2D, 0xFF, 0xFF },
+                                               { 0xFF, 0x3E, 0x00, 0xFF },
+                                               { 0xC9, 0xD4, 0x64, 0xFF },
+                                               { 0x00, 0x78, 0x0F, 0xFF },
+                                               { 0x00, 0xA7, 0x20, 0xFF },
+                                               { 0xFA, 0xEA, 0x27, 0xFF },
+                                               { 0xFF, 0xFC, 0xFF, 0xFF },
+                                               { 0xA7, 0xA8, 0xA8, 0xFF },
+                                               { 0x5A, 0xCB, 0xFF, 0xFF },
+                                               { 0xFF, 0xA6, 0x00, 0xFF },
+                                               { 0x3C, 0x58, 0x00, 0xFF },
+                                               { 0xFF, 0x32, 0x76, 0xFF },
+                                               { 0xBD, 0x95, 0xFF, 0xFF },
+                                               { 0x6C, 0xCD, 0x30, 0xFF },
+                                               { 0xC8, 0x1A, 0x7D, 0xFF } };
+
+//Approximation to the Game Boy's crude LCD under normal conditions
+const ColourRGBA8 gameboyPalette[4] = { { 0x29, 0x41, 0x39, 0xFF },
+                                        { 0x4C, 0x77, 0x63, 0xFF },
+                                        { 0x96, 0xCA, 0x6E, 0xFF },
+                                        { 0xF6, 0xFF, 0x20, 0xFF } };
+
+int palSize;
+ColourRGBA8* selpalette;
 ColourRGBA* srcpalette;
 ColourOkLabA* palette;
 Babl* space;
@@ -132,7 +356,7 @@ Babl* space;
 typedef ColourRGBA OrderedDitherFunction(ColourOkLabA, int, int, float, float, float);
 typedef ColourOkLabA ErrorDiffusionDitherFunction(ColourOkLabA, int, int, int, float, ColourOkLabA*, int);
 
-static ColourRGBA SRGBToLinear(ColourRGBA c)
+static inline ColourRGBA SRGBToLinear(ColourRGBA c)
 {
     if (c.R <= 0.04045f) c.R /= 12.92f;
     else c.R = powf((c.R + 0.055f)/1.055f, 2.4f);
@@ -143,7 +367,7 @@ static ColourRGBA SRGBToLinear(ColourRGBA c)
     return c;
 }
 
-static ColourRGBA LinearToSRGB(ColourRGBA c)
+static inline ColourRGBA LinearToSRGB(ColourRGBA c)
 {
     if (c.R <= 0.0031308f) c.R *= 12.92f;
     else c.R = 1.055f * powf(c.R, 1.0f/2.4f) - 0.055f;
@@ -152,6 +376,12 @@ static ColourRGBA LinearToSRGB(ColourRGBA c)
     if (c.B <= 0.0031308f) c.B *= 12.92f;
     else c.B = 1.055f * powf(c.B, 1.0f/2.4f) - 0.055f;
     return c;
+}
+
+static inline ColourRGBA SRGB8ToLinearFloat(ColourRGBA8 c)
+{
+    ColourRGBA fltcol = { ((float)c.R)/255.0f, ((float)c.G)/255.0f, ((float)c.B)/255.0f, ((float)c.A)/255.0f };
+    return SRGBToLinear(fltcol);
 }
 
 static ColourOkLabA SRGBToOkLab(ColourRGBA c)
@@ -351,12 +581,94 @@ static void prepare(GeglOperation* operation)
     gegl_operation_set_format(operation, "output", babl_format_with_space("RGBA float", space));
 
     //Get palette
+    GeglProperties* props = GEGL_PROPERTIES(operation);
+    palettes pal = props->curpal;
+    switch (pal)
+    {
+        case I1:
+            palSize = 2;
+            selpalette = i1Palette;
+            break;
+        case R1G1B1:
+            palSize = 8;
+            selpalette = r1g1b1Palette;
+            break;
+        case R1G1B1I1:
+            palSize = 16;
+            selpalette = r1g1b1i1Palette;
+            break;
+        case R2G2B2:
+            palSize = 64;
+            selpalette = malloc(palSize * sizeof(ColourRGBA8));
+            for (int i = 0; i < palSize; i++)
+            {
+                ColourRGBA8 curCol = { 0x55 * (i & 0x03), 0x55 * ((i & 0x0C) >> 2), 0x55 * ((i & 0x30) >> 4), 0xFF};
+                selpalette[i] = curCol;
+            }
+            break;
+        case R3G3B3:
+            palSize = 512;
+            selpalette = malloc(palSize * sizeof(ColourRGBA8));
+            for (int i = 0; i < palSize; i++)
+            {
+                ColourRGBA8 curCol = { 0x24 * (i & 0x0007), 0x24 * ((i & 0x0038) >> 3), 0x24 * ((i & 0x01C0) >> 6), 0xFF};
+                selpalette[i] = curCol;
+            }
+            break;
+        case MY16:
+            palSize = 16;
+            selpalette = my16Palette;
+            break;
+        case MSWINDOWS:
+            palSize = 16;
+            selpalette = windowsPalette;
+            break;
+        case MAC2:
+            palSize = 16;
+            selpalette = mac2Palette;
+            break;
+        case RISCOS:
+            palSize = 16;
+            selpalette = riscosPalette;
+            break;
+        case APPLE2_6:
+            palSize = 6;
+            selpalette = apple2_6Palette;
+            break;
+        case APPLE2_15:
+            palSize = 15;
+            selpalette = apple2_15Palette;
+            break;
+        case C64:
+            palSize = 16;
+            selpalette = c64Palette;
+            break;
+        case MSX:
+            palSize = 15;
+            selpalette = msxPalette;
+            break;
+        case INTELLIVISION:
+            palSize = 16;
+            selpalette = intellivisionPalette;
+            break;
+        case GB:
+            palSize = 4;
+            selpalette = gameboyPalette;
+            break;
+        case ADAPTIVE: //Fallback on my 16-colour palette for now
+            palSize = 16;
+            selpalette = my16Palette;
+            break;
+        case FROMFILE: //Fallback on my 16-colour palette for now
+            palSize = 16;
+            selpalette = my16Palette;
+            break;
+    }
     srcpalette = malloc(palSize * sizeof(ColourRGBA));
     palette = malloc(palSize * sizeof(ColourOkLabA));
     for (int i = 0; i < palSize; i++)
     {
-        const ColourRGBA fltcol = { ((float)testPal[i * 3])/255.0f, ((float)testPal[i * 3 + 1])/255.0f, ((float)testPal[i * 3 + 2])/255.0f, 1.0f };
-        srcpalette[i] = SRGBToLinear(fltcol);
+        srcpalette[i] = SRGB8ToLinearFloat(selpalette[i]);
         palette[i] = SRGBToOkLab(srcpalette[i]);
     }
 }
