@@ -6,8 +6,17 @@
 enum_start(ditherMethods)
 enum_value(BAYER2X2, "bayer2", "Bayer 2x2")
 enum_value(BAYER4X4, "bayer4", "Bayer 4x4")
+enum_value(BAYER8X8, "bayer8", "Bayer 8x8")
+enum_value(BAYER16X16, "bayer16", "Bayer 16x16")
+enum_value(VOID16X16, "void16", "Void and cluster 16x16")
 enum_value(FLOYD_STEINBERG, "floyd", "Floyd-Steinberg")
+enum_value(FLOYD_FALSE, "floydfalse", "False Floyd-Steinberg")
 enum_value(JJN, "jjn", "Jarvis-Judice-Ninke")
+enum_value(STUCKI, "stucki", "Stucki")
+enum_value(BURKES, "burkes", "Burkes")
+enum_value(SIERRA, "sierra", "Sierra")
+enum_value(SIERRA2ROW, "sierra2row", "Sierra 2-Row")
+enum_value(FILTERLITE, "filterlite", "Filter Lite")
 enum_value(ATKINSON, "atkinson", "Atkinson")
 enum_end(ditherMethods)
 
@@ -31,10 +40,10 @@ enum_value(ADAPTIVE, "adaptive", "Adaptive (find best colours for this image)")
 enum_value(FROMFILE, "file", "From file (load .gpl file)")
 enum_end(palettes)
 
-property_enum (ditherMethod, _("Dither Method"), ditherMethods, ditherMethods, 1)
+property_enum (ditherMethod, _("Dither Method"), ditherMethods, ditherMethods, BAYER4X4)
     description (_("Choose from a variety of dithering methods, both ordered and error-diffusing."))
 
-property_enum (curpal, _("Palette"), palettes, palettes, 5)
+property_enum (curpal, _("Palette"), palettes, palettes, MY16)
     description (_("Choose the palette you want to use."))
 
 property_double (ditherAmountL, _("Luminosity Dither"),  0.5)
@@ -42,7 +51,7 @@ property_double (ditherAmountL, _("Luminosity Dither"),  0.5)
     value_range (0.0, 2.0)
     ui_range    (0.0, 1.0)
 
-property_double (ditherAmountS, _("Saturation Dither"),  0.5)
+property_double (ditherAmountS, _("Saturation Dither"),  0.2)
     description (_("Magnitude of dither effect on the saturation."))
     value_range (0.0, 2.0)
     ui_range    (0.0, 1.0)
@@ -56,6 +65,11 @@ property_double (ditherAmountE, _("Error Diffusion"),  1.0)
     description (_("Magnitude of error diffusion."))
     value_range (0.0, 1.0)
     ui_range    (0.0, 1.0)
+
+property_double (chromabias, _("Chroma Bias"),  1.0)
+    description (_("Adjust bias towards using 'colourful' colours."))
+    value_range (0.1, 3.0)
+    ui_range    (0.5, 2.0)
 
 property_boolean (boustrophedon, _("Boustrophedon Scanning"), FALSE)
     description (_("Use back-and-forth scanning in error diffusion dithering."))
@@ -97,8 +111,17 @@ typedef struct
 enum_start(ditherMethods)
 enum_value(BAYER2X2, "bayer2", "Bayer 2x2")
 enum_value(BAYER4X4, "bayer4", "Bayer 4x4")
+enum_value(BAYER8X8, "bayer8", "Bayer 8x8")
+enum_value(BAYER16X16, "bayer16", "Bayer 16x16")
+enum_value(VOID16X16, "void16", "Void and cluster 16x16")
 enum_value(FLOYD_STEINBERG, "floyd", "Floyd-Steinberg")
+enum_value(FLOYD_FALSE, "floydfalse", "False Floyd-Steinberg")
 enum_value(JJN, "jjn", "Jarvis-Judice-Ninke")
+enum_value(STUCKI, "stucki", "Stucki")
+enum_value(BURKES, "burkes", "Burkes")
+enum_value(SIERRA, "sierra", "Sierra")
+enum_value(SIERRA2ROW, "sierra2row", "Sierra 2-Row")
+enum_value(FILTERLITE, "filterlite", "Filter Lite")
 enum_value(ATKINSON, "atkinson", "Atkinson")
 enum_end(ditherMethods)
 
@@ -128,6 +151,11 @@ enum_end(palettes)
 #define EDD_EXPAND_Y_TOP    10
 #define EDD_EXPAND_Y_BOTTOM 4
 
+//Clamping macros
+#define CD_CLAMP(x, low, high)  (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
+#define CD_CLAMP_HIGH(x, high)  (((x) > (high)) ? (high) : (x))
+#define CD_CLAMP_LOW(x, low)  (((x) < (low)) ? (low) : (x))
+
 /** OkLab constants **/
 const float OkLabK1 = 0.206f;
 const float OkLabK2 = 0.03f;
@@ -150,13 +178,90 @@ const float LMStoSRGB[9] = { 4.0767416621f, -3.3077115913f,  0.2309699292f,
                             -0.0041960863f, -0.7034186147f,  1.7076147010f };
 
 /** Ordered dither matrices **/
-const float bayer2x2[4] = { -0.5f,  0.25f,
-                             0.0f, -0.25f };
+const float bayer2x2[4] = { -0.5f,   0.0f,
+                             0.25f, -0.25f };
 
-const float bayer4x4[16] = { -0.5f,   0.25f, -0.3125f, 0.4375f,
-                              0.0f,  -0.25f,  0.1875f,-0.0625f,
-                             -0.375f, 0.375f,-0.4375f, 0.3125f,
-                              0.125f,-0.125f, 0.0625f,-0.1875f };
+const float bayer4x4[16] = { -0.5f,     0.0f,    -0.375f,   0.125f,
+                              0.25f,   -0.25f,    0.375f,  -0.125f,
+                             -0.3125f,  0.1875f, -0.4375f,  0.0625f,
+                              0.4375f, -0.0625f,  0.3125f, -0.1875f };
+
+const float bayer8x8[64] = { -0.5f,       0.0f,      -0.375f,     0.125f,    -0.46875f,   0.03125f,  -0.34375f,   0.15625f,
+                              0.25f,     -0.25f,      0.375f,    -0.125f,     0.28125f,  -0.21875f,   0.40625f,  -0.09375f,
+                             -0.3125f,    0.1875f,   -0.4375f,    0.0625f,   -0.28125f,   0.21875f,  -0.40625f,   0.09375f,
+                              0.4375f,   -0.0625f,    0.3125f,   -0.1875f,    0.46875f,  -0.03125f,   0.34375f,  -0.15625f,
+                             -0.453125f,  0.046875f, -0.328125f,  0.171875f, -0.484375f,  0.015625f, -0.359375f,  0.140625f,
+                              0.296875f, -0.203125f,  0.421875f, -0.078125f,  0.265625f, -0.234375f,  0.390625f, -0.109375f,
+                             -0.265625f,  0.234375f, -0.390625f,  0.109375f, -0.296875f,  0.203125f, -0.421875f,  0.078125f,
+                              0.484375f, -0.015625f,  0.359375f, -0.140625f,  0.453125f, -0.046875f,  0.328125f, -0.171875f };
+
+const float bayer16x16[256] = { -0.5f,         0.0f,        -0.375f,       0.125f,      -0.46875f,     0.03125f,    -0.34375f,     0.15625f,    -0.4921875f,   0.0078125f,  -0.3671875f,   0.1328125f,  -0.4609375f,   0.0390625f,  -0.3359375f,   0.1640625f,
+                                 0.25f,       -0.25f,        0.375f,      -0.125f,       0.28125f,    -0.21875f,     0.40625f,    -0.09375f,     0.2578125f,  -0.2421875f,   0.3828125f,  -0.1171875f,   0.2890625f,  -0.2109375f,   0.4140625f,  -0.0859375f,
+                                -0.3125f,      0.1875f,     -0.4375f,      0.0625f,     -0.28125f,     0.21875f,    -0.40625f,     0.09375f,    -0.3046875f,   0.1953125f,  -0.4296875f,   0.0703125f,  -0.2734375f,   0.2265625f,  -0.3984375f,   0.1015625f,
+                                 0.4375f,     -0.0625f,      0.3125f,     -0.1875f,      0.46875f,    -0.03125f,     0.34375f,    -0.15625f,     0.4453125f,  -0.0546875f,   0.3203125f,  -0.1796875f,   0.4765625f,  -0.0234375f,   0.3515625f,  -0.1484375f,
+                                -0.453125f,    0.046875f,   -0.328125f,    0.171875f,   -0.484375f,    0.015625f,   -0.359375f,    0.140625f,   -0.4453125f,   0.0546875f,  -0.3203125f,   0.1796875f,  -0.4765625f,   0.0234375f,  -0.3515625f,   0.1484375f,
+                                 0.296875f,   -0.203125f,    0.421875f,   -0.078125f,    0.265625f,   -0.234375f,    0.390625f,   -0.109375f,    0.3046875f,  -0.1953125f,   0.4296875f,  -0.0703125f,   0.2734375f,  -0.2265625f,   0.3984375f,  -0.1015625f,
+                                -0.265625f,    0.234375f,   -0.390625f,    0.109375f,   -0.296875f,    0.203125f,   -0.421875f,    0.078125f,   -0.2578125f,   0.2421875f,  -0.3828125f,   0.1171875f,  -0.2890625f,   0.2109375f,  -0.4140625f,   0.0859375f,
+                                 0.484375f,   -0.015625f,    0.359375f,   -0.140625f,    0.453125f,   -0.046875f,    0.328125f,   -0.171875f,    0.4921875f,  -0.0078125f,   0.3671875f,  -0.1328125f,   0.4609375f,  -0.0390625f,   0.3359375f,  -0.1640625f,
+                                -0.48828125f,  0.01171875f, -0.36328125f,  0.13671875f, -0.45703125f,  0.04296875f, -0.33203125f,  0.16796875f, -0.49609375f,  0.00390625f, -0.37109375f,  0.12890625f, -0.46484375f,  0.03515625f, -0.33984375f,  0.16015625f,
+                                 0.26171875f, -0.23828125f,  0.38671875f, -0.11328125f,  0.29296875f, -0.20703125f,  0.41796875f, -0.08203125f,  0.25390625f, -0.24609375f,  0.37890625f, -0.12109375f,  0.28515625f, -0.21484375f,  0.41015625f, -0.08984375f,
+                                -0.30078125f,  0.19921875f, -0.42578125f,  0.07421875f, -0.26953125f,  0.23046875f, -0.39453125f,  0.10546875f, -0.30859375f,  0.19140625f, -0.43359375f,  0.06640625f, -0.27734375f,  0.22265625f, -0.40234375f,  0.09765625f,
+                                 0.44921875f, -0.05078125f,  0.32421875f, -0.17578125f,  0.48046875f, -0.01953125f,  0.35546875f, -0.14453125f,  0.44140625f, -0.05859375f,  0.31640625f, -0.18359375f,  0.47265625f, -0.02734375f,  0.34765625f, -0.15234375f,
+                                -0.44140625f,  0.05859375f, -0.31640625f,  0.18359375f, -0.47265625f,  0.02734375f, -0.34765625f,  0.15234375f, -0.44921875f,  0.05078125f, -0.32421875f,  0.17578125f, -0.48046875f,  0.01953125f, -0.35546875f,  0.14453125f,
+                                 0.30859375f, -0.19140625f,  0.43359375f, -0.06640625f,  0.27734375f, -0.22265625f,  0.40234375f, -0.09765625f,  0.30078125f, -0.19921875f,  0.42578125f, -0.07421875f,  0.26953125f, -0.23046875f,  0.39453125f, -0.10546875f,
+                                -0.25390625f,  0.24609375f, -0.37890625f,  0.12109375f, -0.28515625f,  0.21484375f, -0.41015625f,  0.08984375f, -0.26171875f,  0.23828125f, -0.38671875f,  0.11328125f, -0.29296875f,  0.20703125f, -0.41796875f,  0.08203125f,
+                                 0.49609375f, -0.00390625f,  0.37109375f, -0.12890625f,  0.46484375f, -0.03515625f,  0.33984375f, -0.16015625f,  0.48828125f, -0.01171875f,  0.36328125f, -0.13671875f,  0.45703125f, -0.04296875f,  0.33203125f, -0.16796875f };
+
+const float void16x16_1[256] = { -0.35546875f, -0.05859375f,  0.4765625f,   0.1796875f,  -0.1875f,     -0.046875f,   -0.421875f,    0.1171875f,  -0.16015625f,  0.46484375f, -0.09765625f, -0.40234375f,  0.12890625f,  0.28515625f, -0.27734375f, -0.4375f,
+                                  0.0546875f,  -0.20703125f, -0.3046875f,   0.296875f,    0.08203125f, -0.2734375f,   0.390625f,    0.30859375f, -0.23046875f,  0.03515625f,  0.18359375f,  0.3515625f,  -0.00390625f, -0.484375f,   -0.08984375f,  0.37109375f,
+                                  0.26171875f,  0.41796875f,  0.00390625f, -0.40625f,     0.2421875f,  -0.34765625f, -0.1328125f,   0.171875f,   -0.44140625f,  0.26953125f, -0.3671875f,  -0.1796875f,   0.07421875f,  0.484375f,   -0.15625f,     0.2109375f,
+                                 -0.2421875f,  -0.125f,      -0.46484375f,  0.14453125f,  0.43359375f, -0.0859375f,   0.06640625f,  0.4921875f,  -0.3125f,     -0.0390625f,   0.4296875f,  -0.2578125f,   0.25f,       -0.3203125f,  -0.4140625f,   0.11328125f,
+                                 -0.37890625f,  0.32421875f, -0.03515625f, -0.171875f,    0.34375f,    -0.24609375f, -0.4921875f,  -0.0078125f,   0.328125f,    0.09765625f, -0.109375f,   -0.46875f,     0.1640625f,   0.33203125f, -0.07421875f,  0.0234375f,
+                                 -0.29296875f,  0.19140625f,  0.48046875f, -0.36328125f,  0.03125f,     0.203125f,    0.2578125f,  -0.21484375f, -0.38671875f, -0.1640625f,   0.2265625f,   0.39453125f, -0.0234375f,  -0.203125f,    0.4375f,      0.2734375f,
+                                  0.3828125f,   0.05859375f, -0.2265625f,   0.109375f,   -0.30078125f, -0.42578125f,  0.40625f,    -0.0703125f,   0.125f,       0.45703125f, -0.28515625f, -0.4296875f,   0.046875f,   -0.34375f,     0.13671875f, -0.49609375f,
+                                 -0.15234375f, -0.41796875f, -0.0546875f,   0.29296875f,  0.44140625f, -0.1484375f,   0.16015625f,  0.35546875f, -0.33984375f,  0.2890625f,   0.01171875f,  0.1875f,     -0.13671875f,  0.359375f,   -0.25390625f, -0.09375f,
+                                  0.4609375f,   0.15234375f,  0.23046875f, -0.47265625f, -0.10546875f, -0.015625f,   -0.26953125f,  0.05078125f, -0.4609375f,  -0.1015625f,  -0.22265625f, -0.39453125f,  0.47265625f,  0.23828125f,  0.09375f,     0.0f,
+                                 -0.375f,      -0.19921875f,  0.34765625f, -0.328125f,    0.0859375f,   0.3125f,     -0.3984375f,  -0.18359375f,  0.38671875f,  0.21484375f,  0.078125f,    0.31640625f, -0.0625f,     -0.44921875f, -0.32421875f,  0.30078125f,
+                                  0.20703125f, -0.28125f,     0.02734375f,  0.40234375f, -0.234375f,    0.24609375f,  0.48828125f,  0.17578125f, -0.04296875f, -0.30859375f,  0.42578125f,  0.1328125f,  -0.265625f,   -0.17578125f,  0.4140625f,  -0.03125f,
+                                  0.375f,      -0.12890625f,  0.12109375f, -0.4453125f,  -0.06640625f, -0.359375f,    0.01953125f, -0.5f,         0.27734375f, -0.14453125f, -0.43359375f, -0.3515625f,   0.0390625f,   0.265625f,    0.15625f,    -0.48046875f,
+                                  0.0703125f,  -0.41015625f,  0.46875f,    -0.16796875f,  0.19921875f,  0.421875f,   -0.12109375f,  0.1015625f,  -0.26171875f,  0.453125f,   -0.01171875f,  0.36328125f, -0.1171875f,   0.49609375f, -0.23828125f, -0.078125f,
+                                 -0.31640625f,  0.28125f,    -0.01953125f,  0.3203125f,   0.140625f,   -0.296875f,   -0.2109375f,   0.3359375f,  -0.3828125f,   0.1484375f,  -0.1953125f,   0.1953125f,  -0.45703125f,  0.08984375f, -0.390625f,    0.33984375f,
+                                 -0.19140625f,  0.22265625f, -0.25f,       -0.37109375f,  0.04296875f, -0.453125f,    0.25390625f, -0.08203125f,  0.37890625f,  0.0625f,     -0.05078125f,  0.3046875f,  -0.3359375f,   0.234375f,   -0.140625f,    0.015625f,
+                                  0.3984375f,   0.10546875f, -0.48828125f, -0.11328125f,  0.3671875f,   0.44921875f,  0.0078125f,  -0.33203125f,  0.21875f,    -0.4765625f,  -0.2890625f,   0.41015625f, -0.21875f,    -0.02734375f,  0.4453125f,   0.16796875f };
+
+const float void16x16_2[256] = { -0.0546875f,  -0.17578125f,  0.1328125f,   0.25f,       -0.453125f,    0.41015625f,  0.21484375f, -0.42578125f,  0.28515625f, -0.22265625f, -0.44140625f,  0.01953125f, -0.1875f,      0.38671875f, -0.35546875f,  0.08984375f,
+                                 -0.41015625f, -0.25390625f,  0.375f,      -0.3359375f,  -0.109375f,    0.11328125f, -0.0625f,     -0.31640625f,  0.04296875f, -0.1171875f,   0.3671875f,   0.125f,      -0.25f,        0.203125f,   -0.00390625f,  0.46484375f,
+                                  0.29296875f,  0.03515625f, -0.48046875f, -0.01171875f,  0.4609375f,  -0.2421875f,   0.33984375f,  0.1484375f,   0.453125f,   -0.37109375f,  0.2265625f,   0.4921875f,  -0.328125f,   -0.12890625f, -0.44921875f,  0.15234375f,
+                                 -0.10546875f,  0.40234375f,  0.234375f,   -0.14453125f,  0.30078125f, -0.39453125f, -0.19140625f, -0.48828125f, -0.0234375f,  -0.1640625f,   0.08203125f, -0.47265625f, -0.03515625f,  0.265625f,    0.34375f,    -0.2890625f,
+                                  0.09375f,    -0.21484375f,  0.1640625f,  -0.30859375f,  0.0703125f,   0.1875f,      0.015625f,    0.390625f,    0.26953125f, -0.28125f,     0.3203125f,  -0.078125f,    0.41796875f,  0.06640625f, -0.171875f,   -0.390625f,
+                                 -0.04296875f, -0.36328125f,  0.48828125f, -0.43359375f, -0.0703125f,   0.43359375f, -0.34765625f, -0.09765625f,  0.20703125f, -0.23046875f, -0.421875f,    0.17578125f, -0.3515625f,  -0.26171875f,  0.22265625f,  0.4453125f,
+                                  0.12890625f,  0.0078125f,   0.28125f,    -0.15625f,     0.359375f,   -0.2734375f,   0.13671875f, -0.45703125f,  0.05078125f,  0.46875f,     0.109375f,    0.37890625f, -0.203125f,    0.02734375f,  0.35546875f, -0.46484375f,
+                                 -0.33203125f,  0.328125f,   -0.234375f,   -0.49609375f,  0.24609375f, -0.02734375f, -0.20703125f,  0.33203125f, -0.140625f,   -0.3203125f,  -0.0078125f,  -0.12109375f,  0.25390625f, -0.41796875f,  0.15625f,    -0.08203125f,
+                                  0.421875f,   -0.125f,       0.19921875f,  0.09765625f,  0.03125f,     0.47265625f, -0.40234375f,  0.23828125f,  0.4140625f,  -0.3828125f,   0.3046875f,  -0.4921875f,  -0.046875f,    0.484375f,   -0.15234375f, -0.27734375f,
+                                  0.0546875f,  -0.40625f,     0.37109375f, -0.30078125f, -0.3671875f,  -0.11328125f,  0.16796875f,  0.078125f,   -0.05859375f, -0.1796875f,   0.140625f,    0.44140625f, -0.3046875f,   0.0859375f,   0.3125f,      0.18359375f,
+                                  0.2734375f,  -0.01953125f, -0.1953125f,  -0.05078125f,  0.4375f,      0.296875f,   -0.24609375f, -0.4453125f,  -0.29296875f,  0.27734375f,  0.19140625f, -0.23828125f,  0.01171875f, -0.375f,      -0.2109375f,  -0.4765625f,
+                                 -0.33984375f,  0.45703125f,  0.14453125f,  0.21875f,    -0.46875f,    -0.16015625f,  0.34765625f,  0.0f,         0.3984375f,   0.0390625f,  -0.4375f,     -0.1015625f,   0.3359375f,   0.2109375f,   0.40625f,    -0.07421875f,
+                                  0.10546875f, -0.2578125f,  -0.4296875f,   0.39453125f,  0.05859375f, -0.32421875f,  0.12109375f, -0.0859375f,   0.4765625f,  -0.19921875f, -0.34375f,     0.3828125f,   0.1171875f,  -0.4140625f,  -0.16796875f,  0.00390625f,
+                                  0.3515625f,  -0.13671875f,  0.2890625f,  -0.09375f,    -0.2265625f,   0.1796875f,   0.2578125f,  -0.359375f,   -0.484375f,    0.1015625f,   0.23046875f, -0.1484375f,  -0.0390625f,  -0.26953125f,  0.48046875f,  0.2421875f,
+                                 -0.4609375f,   0.046875f,   -0.37890625f, -0.03125f,     0.49609375f, -0.3984375f,   0.36328125f, -0.1328125f,  -0.015625f,    0.31640625f, -0.296875f,    0.44921875f,  0.0625f,     -0.5f,         0.16015625f, -0.3125f,
+                                  0.42578125f,  0.1953125f,   0.32421875f, -0.28515625f,  0.0234375f,  -0.18359375f,  0.07421875f, -0.265625f,    0.4296875f,   0.171875f,   -0.06640625f, -0.38671875f,  0.26171875f,  0.30859375f, -0.08984375f, -0.21875f };
+
+const float void16x16_3[256] = {  0.48828125f,  0.37890625f,  0.015625f,   -0.3125f,      0.35546875f, -0.48828125f,  0.078125f,   -0.23046875f, -0.30859375f,  0.41015625f, -0.4375f,      0.0f,        -0.1328125f,   0.43359375f,  0.33984375f, -0.41015625f,
+                                 -0.2734375f,  -0.15234375f, -0.0703125f,  -0.21484375f,  0.2109375f,  -0.3515625f,   0.30859375f,  0.14453125f, -0.39453125f, -0.1015625f,   0.1640625f,   0.36328125f, -0.29296875f,  0.2734375f,  -0.19140625f,  0.0859375f,
+                                  0.2265625f,  -0.37109375f,  0.2890625f,  -0.43359375f,  0.4140625f,  -0.0078125f,  -0.16796875f,  0.44140625f,  0.03125f,     0.2578125f,   0.0703125f,  -0.375f,      -0.0625f,      0.12109375f, -0.328125f,   -0.015625f,
+                                  0.33203125f,  0.05859375f,  0.45703125f,  0.16015625f,  0.09375f,    -0.11328125f, -0.27734375f, -0.45703125f,  0.3828125f,  -0.203125f,   -0.26171875f,  0.4765625f,  -0.48046875f,  0.20703125f,  0.39453125f, -0.44921875f,
+                                  0.1328125f,  -0.12890625f, -0.25390625f, -0.046875f,   -0.38671875f,  0.23828125f,  0.3359375f,  -0.07421875f,  0.1953125f,  -0.33984375f, -0.0234375f,   0.3203125f,  -0.16015625f,  0.02734375f, -0.2265625f,  -0.08984375f,
+                                 -0.3046875f,  -0.5f,         0.37109375f, -0.1875f,     -0.32421875f,  0.4921875f,   0.125f,       0.01171875f, -0.41796875f,  0.29296875f, -0.1171875f,   0.10546875f,  0.41796875f, -0.421875f,    0.27734375f,  0.46484375f,
+                                  0.0078125f,   0.25390625f,  0.19140625f,  0.0390625f,   0.30078125f, -0.46875f,    -0.2109375f,  -0.30078125f,  0.4609375f,   0.15234375f, -0.4609375f,   0.234375f,   -0.2890625f,  -0.05078125f,  0.171875f,   -0.35546875f,
+                                 -0.20703125f,  0.40625f,    -0.4140625f,  -0.09375f,     0.421875f,   -0.03125f,     0.08203125f, -0.14453125f,  0.3984375f,   0.046875f,   -0.2421875f,   0.3671875f,  -0.3671875f,  -0.18359375f,  0.07421875f,  0.34375f,
+                                 -0.02734375f,  0.1015625f,  -0.15625f,    -0.28125f,     0.13671875f,  0.21875f,    -0.40625f,     0.26953125f, -0.359375f,   -0.17578125f, -0.08203125f, -0.00390625f,  0.203125f,    0.49609375f, -0.125f,      -0.3984375f,
+                                  0.4453125f,   0.16796875f, -0.4765625f,   0.32421875f, -0.34765625f, -0.23828125f,  0.359375f,   -0.05859375f,  0.18359375f,  0.328125f,   -0.44140625f,  0.4296875f,   0.11328125f, -0.484375f,    0.3046875f,  -0.265625f,
+                                 -0.33203125f,  0.265625f,   -0.0546875f,   0.48046875f,  0.01953125f, -0.12109375f,  0.4375f,     -0.49609375f, -0.26953125f,  0.08984375f,  0.25f,       -0.3203125f,  -0.234375f,    0.04296875f,  0.22265625f, -0.0859375f,
+                                  0.375f,      -0.21875f,     0.0546875f,  -0.3828125f,   0.23046875f, -0.1796875f,   0.0625f,      0.15625f,    -0.01171875f,  0.47265625f, -0.390625f,   -0.13671875f, -0.03515625f,  0.390625f,   -0.4296875f,   0.12890625f,
+                                 -0.1484375f,  -0.453125f,    0.19921875f, -0.28515625f,  0.40234375f, -0.4453125f,   0.28515625f, -0.31640625f, -0.19921875f, -0.09765625f,  0.28125f,     0.17578125f,  0.3515625f,  -0.171875f,   -0.296875f,    0.00390625f,
+                                  0.42578125f,  0.09765625f,  0.31640625f, -0.10546875f, -0.01953125f,  0.1171875f,   0.34765625f, -0.36328125f,  0.38671875f,  0.0234375f,  -0.2578125f,  -0.42578125f,  0.06640625f,  0.46875f,    -0.37890625f,  0.296875f,
+                                 -0.04296875f, -0.34375f,    -0.1953125f,   0.453125f,   -0.40234375f, -0.25f,       -0.078125f,    0.1875f,     -0.46484375f,  0.109375f,    0.44921875f, -0.3359375f,  -0.06640625f,  0.1484375f,   0.2421875f,  -0.24609375f,
+                                  0.1796875f,  -0.47265625f,  0.140625f,    0.26171875f,  0.05078125f, -0.140625f,    0.484375f,    0.24609375f, -0.0390625f,  -0.1640625f,   0.3125f,      0.21484375f, -0.22265625f, -0.4921875f,   0.03515625f, -0.109375f };
 
 /** Built-in palettes (hardware palettes are converted to sRGB)**/
 // This section only contains master palettes that can be fully used, in order to prevent misleading use (such as dithering for the NES's master palette, which cannot fully be used for a single frame without silly scanline tricks)
@@ -353,8 +458,8 @@ ColourRGBA* srcpalette;
 ColourOkLabA* palette;
 Babl* space;
 
-typedef ColourRGBA OrderedDitherFunction(ColourOkLabA, int, int, float, float, float);
-typedef ColourOkLabA ErrorDiffusionDitherFunction(ColourOkLabA, int, int, int, float, ColourOkLabA*, int);
+typedef ColourRGBA OrderedDitherFunction(ColourOkLabA, int, int, float, float, float, float);
+typedef ColourOkLabA ErrorDiffusionDitherFunction(ColourOkLabA, int, int, int, float, float, ColourOkLabA*, int);
 
 static inline ColourRGBA SRGBToLinear(ColourRGBA c)
 {
@@ -412,14 +517,14 @@ static ColourRGBA OkLabToSRGB(ColourOkLabA c)
     return outcol;
 }
 
-static ColourRGBA GetClosestColourOkLab(ColourOkLabA col)
+static ColourRGBA GetClosestColourOkLab(ColourOkLabA col, float uvbias)
 {
     float lowestDistance = 999999999999999999999999.9;
     int chosenColour = 0;
     for (int i = 0; i < palSize; i++)
     {
         const ColourOkLabA incol = palette[i];
-        const float dL = col.L - incol.L;
+        const float dL = (col.L - incol.L) * uvbias;
         const float da = col.a - incol.a;
         const float db = col.b - incol.b;
         const float dist = (dL * dL) + (da * da) + (db * db);
@@ -432,14 +537,14 @@ static ColourRGBA GetClosestColourOkLab(ColourOkLabA col)
     return srcpalette[chosenColour];
 }
 
-static ColourOkLabA GetClosestColourOkLabWithError(ColourOkLabA col, ColourOkLabA* error)
+static ColourOkLabA GetClosestColourOkLabWithError(ColourOkLabA col, ColourOkLabA* error, float uvbias)
 {
     float lowestDistance = 999999999999999999999999.9;
     int chosenColour = 0;
     for (int i = 0; i < palSize; i++)
     {
         const ColourOkLabA incol = palette[i];
-        const float dL = col.L - incol.L;
+        const float dL = (col.L - incol.L) * uvbias;
         const float da = col.a - incol.a;
         const float db = col.b - incol.b;
         const float dist = (dL * dL) + (da * da) + (db * db);
@@ -450,28 +555,28 @@ static ColourOkLabA GetClosestColourOkLabWithError(ColourOkLabA col, ColourOkLab
         }
     }
     ColourOkLabA outcol = palette[chosenColour];
-    error->L = col.L - outcol.L;
-    error->a = col.a - outcol.a;
-    error->b = col.b - outcol.b;
+    error->L = CD_CLAMP(col.L - outcol.L, -1.0f, 1.0f);
+    error->a = CD_CLAMP(col.a - outcol.a, -0.5f, 0.5f);
+    error->b = CD_CLAMP(col.b - outcol.b, -0.5f, 0.5f);
     error->A = 0.0f;
     return outcol;
 }
 
-static ColourRGBA OrderedDitherBayer2x2(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH)
+static ColourRGBA OrderedDitherBayer2x2(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float uvbias)
 {
     col.L += bayer2x2[(y % 2) * 2 + (x % 2)] * amtL;
     float sat = sqrtf(col.a * col.a + col.b * col.b);
     float hue = atan2f(col.b, col.a);
-    const float midsat = -amtS * bayer2x2[(y % 4) * 4 + ((x + 1) % 4)];
+    const float midsat = -amtS * bayer2x2[(y % 2) * 2 + ((x + 1) % 2)];
     sat *= 1.0f + midsat;
     sat += midsat * 0.5f;
-    hue += amtH * bayer4x4[((y + 1) % 4) * 4 + (x % 4)];
+    hue += amtH * bayer4x4[((y + 1) % 2) * 2 + (x % 2)];
     col.a = sat * cosf(hue);
     col.b = sat * sinf(hue);
-    return GetClosestColourOkLab(col);
+    return GetClosestColourOkLab(col, uvbias);
 }
 
-static ColourRGBA OrderedDitherBayer4x4(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH)
+static ColourRGBA OrderedDitherBayer4x4(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float uvbias)
 {
     col.L += bayer4x4[(y % 4) * 4 + (x % 4)] * amtL;
     float sat = sqrtf(col.a * col.a + col.b * col.b);
@@ -482,37 +587,100 @@ static ColourRGBA OrderedDitherBayer4x4(ColourOkLabA col, int x, int y, float am
     hue += amtH * bayer4x4[((y + 1) % 4) * 4 + ((x + 2) % 4)];
     col.a = sat * cosf(hue);
     col.b = sat * sinf(hue);
-    return GetClosestColourOkLab(col);
+    return GetClosestColourOkLab(col, uvbias);
 }
 
-static ColourOkLabA DitherFloydSteinberg(ColourOkLabA col, int x, int y, int w, float amt, ColourOkLabA* diffErr, int boustro)
+static ColourRGBA OrderedDitherBayer8x8(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float uvbias)
+{
+    col.L += bayer8x8[(y % 8) * 8 + (x % 8)] * amtL;
+    float sat = sqrtf(col.a * col.a + col.b * col.b);
+    float hue = atan2f(col.b, col.a);
+    const float midsat = -amtS * bayer8x8[((y + 6) % 8) * 8 + ((x + 1) % 8)];
+    sat *= 1.0f + midsat;
+    sat += midsat * 0.5f;
+    hue += amtH * bayer8x8[((y + 3) % 8) * 8 + ((x + 4) % 8)];
+    col.a = sat * cosf(hue);
+    col.b = sat * sinf(hue);
+    return GetClosestColourOkLab(col, uvbias);
+}
+
+static ColourRGBA OrderedDitherBayer16x16(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float uvbias)
+{
+    col.L += bayer16x16[(y % 16) * 16 + (x % 16)] * amtL;
+    float sat = sqrtf(col.a * col.a + col.b * col.b);
+    float hue = atan2f(col.b, col.a);
+    const float midsat = -amtS * bayer16x16[((y + 7) % 16) * 16 + ((x + 4) % 16)];
+    sat *= 1.0f + midsat;
+    sat += midsat * 0.5f;
+    hue += amtH * bayer16x16[((y + 10) % 16) * 16 + ((x + 1) % 16)];
+    col.a = sat * cosf(hue);
+    col.b = sat * sinf(hue);
+    return GetClosestColourOkLab(col, uvbias);
+}
+
+static ColourRGBA OrderedDitherVoid16x16(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float uvbias)
+{
+    int matind = (y % 16) * 16 + (x % 16);
+    col.L += void16x16_1[matind] * amtL;
+    float sat = sqrtf(col.a * col.a + col.b * col.b);
+    float hue = atan2f(col.b, col.a);
+    const float midsat = -amtS * void16x16_2[matind];
+    sat *= 1.0f + midsat;
+    sat += midsat * 0.5f;
+    hue += amtH * void16x16_3[matind];
+    col.a = sat * cosf(hue);
+    col.b = sat * sinf(hue);
+    return GetClosestColourOkLab(col, uvbias);
+}
+
+static ColourOkLabA DitherFloydSteinberg(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
 
     diffCol = &diffErr[(x + boustro) +  y * w];
     float coeff = 0.4375f * amt;
     diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
     diffCol = &diffErr[(x - boustro) + (y + 1) * w];
-    coeff = 0.3125f * amt;
+    coeff = 0.1875f * amt;
     diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
     diffCol = &diffErr[ x            + (y + 1) * w];
-    coeff = 0.1875f * amt;
+    coeff = 0.3125f * amt;
     diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
     diffCol = &diffErr[(x + boustro) + (y + 1) * w];
     coeff = 0.0625f * amt;
     diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
     return outcol;
 }
 
-static ColourOkLabA DitherJJN(ColourOkLabA col, int x, int y, int w, float amt, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherFloydFalse(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+
+    float coeff = 0.375f * amt;
+    diffCol = &diffErr[(x + boustro) +  y * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[ x            + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    coeff = 0.25f * amt;
+    diffCol = &diffErr[(x + boustro) + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    return outcol;
+}
+
+static ColourOkLabA DitherJJN(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+{
+    ColourOkLabA outerr;
+    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
 
     float coeff = (7.0f/48.0f) * amt;
     diffCol = &diffErr[(x + boustro) +  y * w];
@@ -550,12 +718,174 @@ static ColourOkLabA DitherJJN(ColourOkLabA col, int x, int y, int w, float amt, 
     return outcol;
 }
 
-static ColourOkLabA DitherAtkinson(ColourOkLabA col, int x, int y, int w, float amt, ColourOkLabA* diffErr, int boustro)
+static ColourOkLabA DitherStucki(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr);
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+
+    float coeff = (8.0f/42.0f) * amt;
+    diffCol = &diffErr[(x + boustro) +  y * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[ x            + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+
+    coeff = (4.0f/42.0f) * amt;
+    diffCol = &diffErr[(x + 2 * boustro) +  y * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[ x                + (y + 2) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    coeff = (2.0f/42.0f) * amt;
+    diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    coeff = (1.0f/42.0f) * amt;
+    diffCol = &diffErr[(x + 2 * boustro) + (y + 2) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - 2 * boustro) + (y + 2) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    return outcol;
+}
+
+static ColourOkLabA DitherBurkes(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+{
+    ColourOkLabA outerr;
+    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+
+    float coeff = (8.0f/32.0f) * amt;
+    diffCol = &diffErr[(x + boustro) +  y * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[ x            + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    coeff = (4.0f/32.0f) * amt;
+    diffCol = &diffErr[(x + 2 * boustro) +  y * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    coeff = (2.0f/32.0f) * amt;
+    diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    return outcol;
+}
+
+static ColourOkLabA DitherSierra(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+{
+    ColourOkLabA outerr;
+    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+
+    float coeff = (5.0f/32.0f) * amt;
+    diffCol = &diffErr[(x + boustro) +  y * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[ x            + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    coeff = (4.0f/32.0f) * amt;
+    diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    coeff = (3.0f/32.0f) * amt;
+    diffCol = &diffErr[(x + 2 * boustro) +  y * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[ x                + (y + 2) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    coeff = (2.0f/32.0f) * amt;
+    diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    return outcol;
+}
+
+static ColourOkLabA DitherSierra2Row(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+{
+    ColourOkLabA outerr;
+    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+
+    float coeff = (4.0f/16.0f) * amt;
+    diffCol = &diffErr[(x + boustro) +  y * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    coeff = (3.0f/16.0f) * amt;
+    diffCol = &diffErr[(x + 2 * boustro) +  y * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[ x                + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    coeff = (2.0f/16.0f) * amt;
+    diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    coeff = (1.0f/16.0f) * amt;
+    diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    return outcol;
+}
+
+static ColourOkLabA DitherFilterLite(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+{
+    ColourOkLabA outerr;
+    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
+
+    float coeff = 0.5f * amt;
+    diffCol = &diffErr[(x + boustro) +  y * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    coeff = 0.25f * amt;
+    diffCol = &diffErr[ x            + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol = &diffErr[(x - boustro) + (y + 1) * w];
+    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+
+    return outcol;
+}
+
+static ColourOkLabA DitherAtkinson(ColourOkLabA col, int x, int y, int w, float amt, float uvbias, ColourOkLabA* diffErr, int boustro)
+{
+    ColourOkLabA outerr;
+    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, uvbias);
 
     const float coeff = amt / 6.0f; //Note: the canonical Atkinson dither only diffuses 3/4 of the error, but we'll normalise this one anyway
     diffCol = &diffErr[(x + boustro)     +  y * w];
@@ -587,15 +917,15 @@ static void prepare(GeglOperation* operation)
     {
         case I1:
             palSize = 2;
-            selpalette = i1Palette;
+            selpalette = (ColourRGBA8*)i1Palette;
             break;
         case R1G1B1:
             palSize = 8;
-            selpalette = r1g1b1Palette;
+            selpalette = (ColourRGBA8*)r1g1b1Palette;
             break;
         case R1G1B1I1:
             palSize = 16;
-            selpalette = r1g1b1i1Palette;
+            selpalette = (ColourRGBA8*)r1g1b1i1Palette;
             break;
         case R2G2B2:
             palSize = 64;
@@ -617,51 +947,51 @@ static void prepare(GeglOperation* operation)
             break;
         case MY16:
             palSize = 16;
-            selpalette = my16Palette;
+            selpalette = (ColourRGBA8*)my16Palette;
             break;
         case MSWINDOWS:
             palSize = 16;
-            selpalette = windowsPalette;
+            selpalette = (ColourRGBA8*)windowsPalette;
             break;
         case MAC2:
             palSize = 16;
-            selpalette = mac2Palette;
+            selpalette = (ColourRGBA8*)mac2Palette;
             break;
         case RISCOS:
             palSize = 16;
-            selpalette = riscosPalette;
+            selpalette = (ColourRGBA8*)riscosPalette;
             break;
         case APPLE2_6:
             palSize = 6;
-            selpalette = apple2_6Palette;
+            selpalette = (ColourRGBA8*)apple2_6Palette;
             break;
         case APPLE2_15:
             palSize = 15;
-            selpalette = apple2_15Palette;
+            selpalette = (ColourRGBA8*)apple2_15Palette;
             break;
         case C64:
             palSize = 16;
-            selpalette = c64Palette;
+            selpalette = (ColourRGBA8*)c64Palette;
             break;
         case MSX:
             palSize = 15;
-            selpalette = msxPalette;
+            selpalette = (ColourRGBA8*)msxPalette;
             break;
         case INTELLIVISION:
             palSize = 16;
-            selpalette = intellivisionPalette;
+            selpalette = (ColourRGBA8*)intellivisionPalette;
             break;
         case GB:
             palSize = 4;
-            selpalette = gameboyPalette;
+            selpalette = (ColourRGBA8*)gameboyPalette;
             break;
         case ADAPTIVE: //Fallback on my 16-colour palette for now
             palSize = 16;
-            selpalette = my16Palette;
+            selpalette = (ColourRGBA8*)my16Palette;
             break;
         case FROMFILE: //Fallback on my 16-colour palette for now
             palSize = 16;
-            selpalette = my16Palette;
+            selpalette = (ColourRGBA8*)my16Palette;
             break;
     }
     srcpalette = malloc(palSize * sizeof(ColourRGBA));
@@ -687,6 +1017,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
     gfloat ditAmtS = props->ditherAmountS;
     gfloat ditAmtH = props->ditherAmountH;
     gfloat ditAmtE = props->ditherAmountE;
+    gfloat cbias = props->chromabias;
     gboolean globBoustro = props->boustrophedon;
 
     //Allocate buffers
@@ -706,13 +1037,43 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             odfunc = &OrderedDitherBayer2x2; break;
         case BAYER4X4:
             odfunc = &OrderedDitherBayer4x4; break;
+        case BAYER8X8:
+            odfunc = &OrderedDitherBayer8x8; break;
+        case BAYER16X16:
+            odfunc = &OrderedDitherBayer16x16; break;
+        case VOID16X16:
+            odfunc = &OrderedDitherVoid16x16; break;
         case FLOYD_STEINBERG:
             eddfunc = &DitherFloydSteinberg;
+            eddMarginX = 1; eddMarginY = 1;
+            break;
+        case FLOYD_FALSE:
+            eddfunc = &DitherFloydFalse;
             eddMarginX = 1; eddMarginY = 1;
             break;
         case JJN:
             eddfunc = &DitherJJN;
             eddMarginX = 2; eddMarginY = 2;
+            break;
+        case STUCKI:
+            eddfunc = &DitherStucki;
+            eddMarginX = 2; eddMarginY = 2;
+            break;
+        case BURKES:
+            eddfunc = &DitherBurkes;
+            eddMarginX = 2; eddMarginY = 1;
+            break;
+        case SIERRA:
+            eddfunc = &DitherSierra;
+            eddMarginX = 2; eddMarginY = 2;
+            break;
+        case SIERRA2ROW:
+            eddfunc = &DitherSierra2Row;
+            eddMarginX = 2; eddMarginY = 1;
+            break;
+        case FILTERLITE:
+            eddfunc = &DitherFilterLite;
+            eddMarginX = 1; eddMarginY = 1;
             break;
         case ATKINSON:
             eddfunc = &DitherAtkinson;
@@ -731,7 +1092,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             {
                 const glong index = i * w + j;
                 ColourOkLabA incol = SRGBToOkLab(pixel[index]);
-                pixel[index] = odfunc(incol, j + x, i + y, ditAmtL, ditAmtS, ditAmtH);
+                pixel[index] = odfunc(incol, j + x, i + y, ditAmtL, ditAmtS, ditAmtH, cbias);
             }
         }
     }
@@ -753,7 +1114,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
                 {
                     const glong index = i * w + j;
                     ColourOkLabA incol = SRGBToOkLab(expandedInput[index]);
-                    expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtE, diffusedError, -1));
+                    expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtE, cbias, diffusedError, -1));
                 }
             }
             else
@@ -762,7 +1123,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
                 {
                     const glong index = i * w + j;
                     ColourOkLabA incol = SRGBToOkLab(expandedInput[index]);
-                    expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtE, diffusedError, 1));
+                    expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtE, cbias, diffusedError, 1));
                 }
             }
         }
