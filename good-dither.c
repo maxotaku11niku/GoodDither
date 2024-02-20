@@ -71,6 +71,16 @@ property_double (chromabias, _("Chroma Bias"),  1.0)
     value_range (0.1, 3.0)
     ui_range    (0.5, 2.0)
 
+property_double (preBright, _("Pre-brightness"),  0.0)
+    description (_("Brightness adjustment applied before dithering."))
+    value_range (-1.0, 1.0)
+    ui_range    (-1.0, 1.0)
+
+property_double (preContrast, _("Pre-contrast"),  0.0)
+    description (_("Contrast adjustment applied before dithering."))
+    value_range (-1.0, 1.0)
+    ui_range    (-1.0, 1.0)
+
 property_double (postBright, _("Post-brightness"),  0.0)
     description (_("Brightness adjustment applied just before finding the best colour."))
     value_range (-1.0, 1.0)
@@ -458,9 +468,9 @@ const ColourRGBA8 intellivisionPalette[16] = { { 0x00, 0x00, 0x00, 0xFF },
 
 //Approximation to the Game Boy's crude LCD under normal conditions
 const ColourRGBA8 gameboyPalette[4] = { { 0x29, 0x41, 0x39, 0xFF },
-                                        { 0x4C, 0x77, 0x63, 0xFF },
-                                        { 0x96, 0xCA, 0x6E, 0xFF },
-                                        { 0xF6, 0xFF, 0x20, 0xFF } };
+                                        { 0x39, 0x59, 0x4A, 0xFF },
+                                        { 0x5A, 0x79, 0x42, 0xFF },
+                                        { 0x7B, 0x82, 0x10, 0xFF } };
 
 int palSize;
 ColourRGBA8* selpalette;
@@ -527,7 +537,7 @@ static ColourRGBA OkLabToSRGB(ColourOkLabA c)
     return outcol;
 }
 
-static ColourOkLabA ColourAdjust(ColourOkLabA c, float bright, float contrast)
+static inline ColourOkLabA ColourAdjust(ColourOkLabA c, float bright, float contrast)
 {
     c.L += bright;
 
@@ -688,10 +698,11 @@ static ColourOkLabA DitherFloydFalse(ColourOkLabA col, int x, int y, int w, floa
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = 0.375f * amt;
+    float Lerrc = outerr.L * coeff; float aerrc = outerr.a * coeff; float berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     coeff = 0.25f * amt;
     diffCol = &diffErr[(x + boustro) + (y + 1) * w];
     diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
@@ -707,37 +718,41 @@ static ColourOkLabA DitherJJN(ColourOkLabA col, int x, int y, int w, float amt, 
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = (7.0f/48.0f) * amt;
+    float Lerrc = outerr.L * coeff; float aerrc = outerr.a * coeff; float berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
 
     coeff = (5.0f/48.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x                + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (3.0f/48.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (1.0f/48.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - 2 * boustro) + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     return outcol;
 }
@@ -750,37 +765,41 @@ static ColourOkLabA DitherStucki(ColourOkLabA col, int x, int y, int w, float am
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = (8.0f/42.0f) * amt;
+    float Lerrc = outerr.L * coeff; float aerrc = outerr.a * coeff; float berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
 
     coeff = (4.0f/42.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x                + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (2.0f/42.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (1.0f/42.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - 2 * boustro) + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     return outcol;
 }
@@ -793,24 +812,27 @@ static ColourOkLabA DitherBurkes(ColourOkLabA col, int x, int y, int w, float am
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = (8.0f/32.0f) * amt;
+    float Lerrc = outerr.L * coeff; float aerrc = outerr.a * coeff; float berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (4.0f/32.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (2.0f/32.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     return outcol;
 }
@@ -823,32 +845,36 @@ static ColourOkLabA DitherSierra(ColourOkLabA col, int x, int y, int w, float am
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     float coeff = (5.0f/32.0f) * amt;
+    float Lerrc = outerr.L * coeff; float aerrc = outerr.a * coeff; float berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (4.0f/32.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (3.0f/32.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x                + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (2.0f/32.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     return outcol;
 }
@@ -865,22 +891,25 @@ static ColourOkLabA DitherSierra2Row(ColourOkLabA col, int x, int y, int w, floa
     diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
 
     coeff = (3.0f/16.0f) * amt;
+    float Lerrc = outerr.L * coeff; float aerrc = outerr.a * coeff; float berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x                + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (2.0f/16.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     coeff = (1.0f/16.0f) * amt;
+    Lerrc = outerr.L * coeff; aerrc = outerr.a * coeff; berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     return outcol;
 }
@@ -896,10 +925,11 @@ static ColourOkLabA DitherFilterLite(ColourOkLabA col, int x, int y, int w, floa
     diffCol = &diffErr[(x + boustro) +  y * w];
     diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
     coeff = 0.25f * amt;
+    float Lerrc = outerr.L * coeff; float aerrc = outerr.a * coeff; float berrc = outerr.b * coeff;
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     return outcol;
 }
@@ -912,18 +942,19 @@ static ColourOkLabA DitherAtkinson(ColourOkLabA col, int x, int y, int w, float 
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias);
 
     const float coeff = amt / 6.0f; //Note: the canonical Atkinson dither only diffuses 3/4 of the error, but we'll normalise this one anyway
+    float Lerrc = outerr.L * coeff; float aerrc = outerr.a * coeff; float berrc = outerr.b * coeff;
     diffCol = &diffErr[(x + boustro)     +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x                + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
     diffCol = &diffErr[ x                + (y + 2) * w];
-    diffCol->L += outerr.L * coeff; diffCol->a += outerr.a * coeff; diffCol->b += outerr.b * coeff;
+    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
 
     return outcol;
 }
@@ -965,7 +996,10 @@ static void prepare(GeglOperation* operation)
             selpalette = malloc(palSize * sizeof(ColourRGBA8));
             for (int i = 0; i < palSize; i++)
             {
-                ColourRGBA8 curCol = { 0x24 * (i & 0x0007), 0x24 * ((i & 0x0038) >> 3), 0x24 * ((i & 0x01C0) >> 6), 0xFF};
+                ColourRGBA8 curCol = { ((((0xFF * (i & 0x0007)) << 20) / 7) + 0x80000) >> 20,
+                                       ((((0xFF * (i & 0x0038)) << 17) / 7) + 0x80000) >> 20,
+                                       ((((0xFF * (i & 0x01C0)) << 14) / 7) + 0x80000) >> 20,
+                                       0xFF }; //component * 255/7 for RGB, but done in fixed point
                 selpalette[i] = curCol;
             }
             break;
@@ -1042,6 +1076,8 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
     gfloat ditAmtH = props->ditherAmountH;
     gfloat ditAmtE = props->ditherAmountE;
     gfloat cbias = props->chromabias;
+    gfloat preB = props->preBright;
+    gfloat preC = props->preContrast;
     gfloat postB = props->postBright;
     gfloat postC = props->postContrast;
     gboolean globBoustro = props->boustrophedon;
@@ -1118,6 +1154,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             {
                 const glong index = i * w + j;
                 ColourOkLabA incol = SRGBToOkLab(pixel[index]);
+                incol = ColourAdjust(incol, preB, preC);
                 pixel[index] = odfunc(incol, j + x, i + y, ditAmtL, ditAmtS, ditAmtH, postB, postC, cbias);
             }
         }
@@ -1140,6 +1177,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
                 {
                     const glong index = i * w + j;
                     ColourOkLabA incol = SRGBToOkLab(expandedInput[index]);
+                    incol = ColourAdjust(incol, preB, preC);
                     expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtE, postB, postC, cbias, diffusedError, -1));
                 }
             }
@@ -1149,6 +1187,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
                 {
                     const glong index = i * w + j;
                     ColourOkLabA incol = SRGBToOkLab(expandedInput[index]);
+                    incol = ColourAdjust(incol, preB, preC);
                     expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtE, postB, postC, cbias, diffusedError, 1));
                 }
             }
