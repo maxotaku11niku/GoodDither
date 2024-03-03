@@ -4,7 +4,7 @@ project('good-dither', 'c',
 
 # These arguments are only used to build the shared library
 # not the executables that use the library.
-lib_args = ['-DBUILDING_GEGLACTIONLINES']
+lib_args = ['-DBUILDING_GEGLACTIONLINES', '-Ofast', '-fno-trapping-math', '-fno-math-errno', '-ffast-math', '-ffp-contract=fast', '-ffinite-math-only', '-fno-signed-zeros', '-freciprocal-math']
 #
 pkgconfig = import('pkgconfig')
 i18n      = import('i18n')
