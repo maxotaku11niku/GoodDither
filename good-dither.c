@@ -46,6 +46,26 @@ property_enum (ditherMethod, _("Dither Method"), ditherMethods, ditherMethods, B
 property_enum (curpal, _("Palette"), palettes, palettes, MY16)
     description (_("Choose the palette you want to use."))
 
+property_int (numcol, _("Number of Colours"), 16)
+    description (_("Number of colours in the generated palette."))
+    value_range (2, 512)
+    ui_range    (2, 256)
+
+property_double (adptBright, _("Adaptive Pre-brightness"),  0.0)
+    description (_("Brightness adjustment applied before finding best palette."))
+    value_range (-1.0, 1.0)
+    ui_range    (-1.0, 1.0)
+
+property_double (adptContrast, _("Adaptive Pre-contrast"),  0.0)
+    description (_("Contrast adjustment applied before finding best palette."))
+    value_range (-1.0, 1.0)
+    ui_range    (-1.0, 1.0)
+
+property_double (adptchromabias, _("Adaptive Chroma Bias"),  1.0)
+    description (_("Adjust bias towards generating 'colourful' colours for an adaptive palette."))
+    value_range (0.2, 8.0)
+    ui_range    (0.5, 4.0)
+
 property_double (ditherAmountL, _("Luminosity Dither"),  0.5)
     description (_("Magnitude of dither effect on the luminosity."))
     value_range (0.0, 2.0)
@@ -482,6 +502,8 @@ const ColourRGBA8 gameboyPalette[4] = { { 0x29, 0x41, 0x39, 0xFF },
                                         { 0x5A, 0x79, 0x42, 0xFF },
                                         { 0x7B, 0x82, 0x10, 0xFF } };
 
+volatile int hasStartedToFindBestColours;
+volatile int hasFoundBestColours;
 int palSize;
 ColourRGBA8* selpalette;
 ColourRGBA* srcpalette;
@@ -520,6 +542,21 @@ static inline ColourRGBA SRGB8ToLinearFloat(ColourRGBA8 c)
     return SRGBToLinear(fltcol);
 }
 
+static inline ColourRGBA8 LinearFloatToSRGB8(ColourRGBA c)
+{
+    ColourRGBA fltcol = LinearToSRGB(c);
+    int oR = (int)((fltcol.R * 255.0f) + 0.5f);
+    int oG = (int)((fltcol.G * 255.0f) + 0.5f);
+    int oB = (int)((fltcol.B * 255.0f) + 0.5f);
+    int oA = (int)((fltcol.A * 255.0f) + 0.5f);
+    if (oR > 0xFF) oR = 0xFF; else if (oR < 0) oR = 0;
+    if (oG > 0xFF) oG = 0xFF; else if (oG < 0) oG = 0;
+    if (oB > 0xFF) oB = 0xFF; else if (oB < 0) oB = 0;
+    if (oA > 0xFF) oA = 0xFF; else if (oA < 0) oA = 0;
+    ColourRGBA8 outcol = { (unsigned char)oR, (unsigned char)oG, (unsigned char)oB, (unsigned char)oA };
+    return outcol;
+}
+
 static ColourOkLabA SRGBToOkLab(ColourRGBA c)
 {
     float l = SRGBtoLMS[0] * c.R + SRGBtoLMS[1] * c.G + SRGBtoLMS[2] * c.B;
@@ -544,7 +581,7 @@ static ColourRGBA OkLabToSRGB(ColourOkLabA c)
     float R = LMStoSRGB[0] * l + LMStoSRGB[1] * m + LMStoSRGB[2] * s;
     float G = LMStoSRGB[3] * l + LMStoSRGB[4] * m + LMStoSRGB[5] * s;
     float B = LMStoSRGB[6] * l + LMStoSRGB[7] * m + LMStoSRGB[8] * s;
-    ColourRGBA outcol = { R, G, B, c.A};
+    ColourRGBA outcol = { R, G, B, c.A };
     return outcol;
 }
 
@@ -561,7 +598,7 @@ static inline ColourOkLabA ColourAdjust(ColourOkLabA c, float bright, float cont
 }
 
 //xoshiro128+
-static inline float RNGUpdate()
+static inline unsigned int RNGUpdate()
 {
     unsigned int* s = rngNum;
     unsigned int r = s[0] + s[3];
@@ -572,6 +609,12 @@ static inline float RNGUpdate()
     s[0] ^= s[3];
     s[2] ^= t;
     s[3] = (s[3] << 13) | (s[3] >> 19);
+    return r;
+}
+
+static inline float RNGUpdateFloat()
+{
+    unsigned int r = RNGUpdate();
     unsigned int o = 0x3F800000; //1.0
     o |= r >> 9;
     float f = *((float*)(&o)); //Should be between 1 and ~2
@@ -618,9 +661,9 @@ static ColourOkLabA GetClosestColourOkLabWithError(ColourOkLabA col, ColourOkLab
         }
     }
     ColourOkLabA outcol = palette[chosenColour];
-    error->L = col.L - outcol.L + RNGUpdate()*rngAmtL;
-    error->a = col.a - outcol.a + RNGUpdate()*rngAmtC;
-    error->b = col.b - outcol.b + RNGUpdate()*rngAmtC;
+    error->L = col.L - outcol.L + RNGUpdateFloat()*rngAmtL;
+    error->a = col.a - outcol.a + RNGUpdateFloat()*rngAmtC;
+    error->b = col.b - outcol.b + RNGUpdateFloat()*rngAmtC;
     error->A = 0.0f;
     return outcol;
 }
@@ -986,6 +1029,126 @@ static ColourOkLabA DitherAtkinson(ColourOkLabA col, int x, int y, int w, float 
     return outcol;
 }
 
+typedef struct
+{
+    ColourOkLabA mean;
+    ColourOkLabA lastmean;
+    long long numInCluster;
+    double sumL;
+    double suma;
+    double sumb;
+} KMean;
+
+//Currently uses the k-means algorithm
+static void GetBestPalette(ColourRGBA8* pal, int numColours, ColourRGBA* pixels, long long numPixels, float uvbias, float bright, float contrast)
+{
+    ColourOkLabA* colours = malloc(numPixels * sizeof(ColourOkLabA));
+    KMean* means = malloc(numColours * sizeof(KMean));
+    //Initialise means
+    for (int i = 0; i < numColours; i++)
+    {
+        KMean m;
+        m.numInCluster = 0;
+        m.sumL = 0.0; m.suma = 0.0; m.sumb = 0.0;
+        means[i] = m;
+    }
+    //Initialise colour array
+    for (long long i = 0; i < numPixels; i++)
+    {
+        colours[i] = ColourAdjust(SRGBToOkLab(pixels[i]), bright, contrast);
+    }
+    //Pick some means
+    for (int i = 0; i < numColours; i++)
+    {
+        KMean m = means[i];
+        unsigned int rnum = RNGUpdate() % numPixels;
+        ColourOkLabA meancol = colours[rnum];
+        m.mean = meancol;
+        means[i] = m;
+    }
+
+    //Iterate the means
+    int iterationsLeft = numColours + 48;
+    while (iterationsLeft > 0)
+    {
+        //Zero out sums and counts
+        for (int i = 0; i < numColours; i++)
+        {
+            KMean m = means[i];
+            m.lastmean = m.mean;
+            m.numInCluster = 0;
+            m.sumL = 0.0; m.suma = 0.0; m.sumb = 0.0;
+            means[i] = m;
+        }
+        //Associate each colour with the closest mean
+        for (long long i = 0; i < numPixels; i++)
+        {
+            ColourOkLabA col = colours[i];
+            float lowestDistance = 999999999999999999999999.9;
+            int chosenColour = 0;
+            for (int j = 0; j < numColours; j++)
+            {
+                const ColourOkLabA incol = means[j].mean;
+                const float dL = (col.L - incol.L) * uvbias;
+                const float da = col.a - incol.a;
+                const float db = col.b - incol.b;
+                const float dist = (dL * dL) + (da * da) + (db * db);
+                if (dist < lowestDistance)
+                {
+                    lowestDistance = dist;
+                    chosenColour = j;
+                }
+            }
+            KMean m = means[chosenColour];
+            m.sumL += (double)col.L;
+            m.suma += (double)col.a;
+            m.sumb += (double)col.b;
+            m.numInCluster++;
+            means[chosenColour] = m;
+        }
+        //Calculate means
+        double meandiff = 0.0;
+        for (int i = 0; i < numColours; i++)
+        {
+            KMean m = means[i];
+            ColourOkLabA meancol;
+            if (m.numInCluster <= 0) //Fallback because of suspected division by zero errors;
+            {
+                meancol.L = (RNGUpdateFloat() * 0.5f) + 0.5f;
+                meancol.a = RNGUpdateFloat() * 0.5f;
+                meancol.b = RNGUpdateFloat() * 0.5f;
+            }
+            else
+            {
+                meancol.L = m.sumL/((double)m.numInCluster);
+                meancol.a = m.suma/((double)m.numInCluster);
+                meancol.b = m.sumb/((double)m.numInCluster);
+            }
+            meancol.A = 1.0f;
+            m.mean = meancol;
+            const float dL = (m.mean.L - m.lastmean.L) * uvbias;
+            const float da = m.mean.a - m.lastmean.a;
+            const float db = m.mean.b - m.lastmean.b;
+            const float dist = (dL * dL) + (da * da) + (db * db);
+            meandiff += sqrt((double)dist);
+            means[i] = m;
+        }
+        if (meandiff < 0.005) iterationsLeft = 0; //Break out if convergence has been reached
+        iterationsLeft--;
+    }
+
+    //Confirm colours
+    for (int i = 0; i < numColours; i++)
+    {
+        ColourOkLabA incol = means[i].mean;
+        ColourRGBA midcol = OkLabToSRGB(incol);
+        pal[i] = LinearFloatToSRGB8(midcol);
+    }
+
+    free(means);
+    free(colours);
+}
+
 static void prepare(GeglOperation* operation)
 {
     space = gegl_operation_get_source_space(operation, "input");
@@ -999,6 +1162,7 @@ static void prepare(GeglOperation* operation)
     rngNum[2] = 0x78AFC253 * ((unsigned int)operation);
     rngNum[3] = 0x23B90FC7 * ((unsigned int)props); //Yes, I'm seeding the RNG with a memory address
     palettes pal = props->curpal;
+    hasFoundBestColours = 1;
     switch (pal)
     {
         case I1:
@@ -1074,9 +1238,11 @@ static void prepare(GeglOperation* operation)
             palSize = 4;
             selpalette = (ColourRGBA8*)gameboyPalette;
             break;
-        case ADAPTIVE: //Fallback on my 16-colour palette for now
-            palSize = 16;
-            selpalette = (ColourRGBA8*)my16Palette;
+        case ADAPTIVE:
+            palSize = props->numcol;
+            selpalette = malloc(palSize * sizeof(ColourRGBA8));
+            hasFoundBestColours = 0;
+            hasStartedToFindBestColours = 0;
             break;
         case FROMFILE: //Fallback on my 16-colour palette for now
             palSize = 16;
@@ -1096,6 +1262,34 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
 {
     //Get properties
     GeglProperties* props = GEGL_PROPERTIES(op);
+    if (!hasFoundBestColours) //hacky
+    {
+        if (!hasStartedToFindBestColours)
+        {
+            hasStartedToFindBestColours = 1; //for god's sake please get here really really fast before some other stupid chunk starts processing
+            GeglRectangle totalRect = gegl_operation_get_bounding_box(op);
+            long long numpix = totalRect.width * totalRect.height;
+            const Babl* fmt = babl_format_with_space("RGBA float", space);
+            ColourRGBA* totalImg = malloc(numpix * sizeof(ColourRGBA));
+            gegl_buffer_get(inBuf, &totalRect, 1.0, fmt, totalImg, GEGL_AUTO_ROWSTRIDE, GEGL_ABYSS_CLAMP);
+            GetBestPalette(selpalette, palSize, totalImg, numpix, 1.0f/props->adptchromabias, props->adptBright, props->adptContrast);
+            free(totalImg);
+            for (int i = 0; i < palSize; i++)
+            {
+                srcpalette[i] = SRGB8ToLinearFloat(selpalette[i]);
+                palette[i] = SRGBToOkLab(srcpalette[i]);
+            }
+            hasFoundBestColours = 1;
+        }
+        else
+        {
+            while (1)
+            {
+                if (hasFoundBestColours) break; //wait for the first thread to find the colours (busy loop for now)
+            }
+        }
+    }
+
     const Babl* fmt = babl_format_with_space("RGBA float", space);
     glong x = roi->x;
     glong y = roi->y;
