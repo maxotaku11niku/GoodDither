@@ -163,6 +163,113 @@ typedef struct
     float A;
 } ColourOkLabA;
 
+static inline ColourOkLabA ColourOkLabAAdd(ColourOkLabA l, ColourOkLabA r)
+{
+    ColourOkLabA c;
+    /*/
+    c.L = l.L + r.L;
+    c.a = l.a + r.a;
+    c.b = l.b + r.b;
+    c.A = l.A + r.A;
+    //*/
+    /**/
+    __asm (
+        "movups %1, %0\n\t"
+        "addps %2, %0"
+    : "=x" (c) : "xm" (l), "xm" (r)); //Should be compatible with all x86-64 processors
+    //*/
+    return c;
+}
+
+static inline ColourOkLabA ColourOkLabAAddAccumulate(ColourOkLabA l, ColourOkLabA r)
+{
+    /*/
+    l.L += r.L;
+    l.a += r.a;
+    l.b += r.b;
+    l.A += r.A;
+    //*/
+    /**/
+    __asm (
+        "addps %1, %0"
+    : "+x" (l) : "xm" (r)); //Should be compatible with all x86-64 processors
+    //*/
+    return l;
+}
+
+static inline ColourOkLabA ColourOkLabAMultiply(ColourOkLabA l, ColourOkLabA r)
+{
+
+    ColourOkLabA c;
+    /*/
+    c.L = l.L * r.L;
+    c.a = l.a * r.a;
+    c.b = l.b * r.b;
+    c.A = l.A * r.A;
+    //*/
+    /**/
+    __asm (
+        "movups %1, %0\n\t"
+        "mulps %2, %0"
+    : "=x" (c) : "xm" (l), "xm" (r)); //Should be compatible with all x86-64 processors
+    //*/
+    return c;
+}
+
+static inline ColourOkLabA ColourOkLabAMultiplyAccumulate(ColourOkLabA l, ColourOkLabA r)
+{
+    /*/
+    l.L *= r.L;
+    l.a *= r.a;
+    l.b *= r.b;
+    l.A *= r.A;
+    //*/
+    /**/
+    __asm (
+        "mulps %1, %0"
+    : "+x" (l) : "xm" (r)); //Should be compatible with all x86-64 processors
+    //*/
+    return l;
+}
+
+static inline ColourOkLabA ColourOkLabAFMA(ColourOkLabA a, ColourOkLabA ml, ColourOkLabA mr)
+{
+    ColourOkLabA c;
+    /*/
+    c.L = a.L + (ml.L * mr.L);
+    c.a = a.a + (ml.a * mr.a);
+    c.b = a.b + (ml.b * mr.b);
+    c.A = a.A + (ml.A * mr.A);
+    //*/
+    /**/
+    __asm (
+        "movups %2, %%xmm7\n\t"
+        "mulps %3, %%xmm7\n\t"
+        "movups %1, %0\n\t"
+        "addps %%xmm7, %0"
+    : "=x" (c) : "xm" (a), "xm" (ml), "xm" (mr) : "%xmm7"); //Should be compatible with all x86-64 processors
+    //*/
+    return c;
+}
+
+static inline ColourOkLabA ColourOkLabAFMAAccumulate(ColourOkLabA a, ColourOkLabA ml, ColourOkLabA mr)
+{
+    /*/
+    a.L += ml.L * mr.L;
+    a.a += ml.a * mr.a;
+    a.b += ml.b * mr.b;
+    a.A += ml.A * mr.A;
+    //*/
+    /**/
+    __asm (
+        "movups %1, %%xmm7\n\t"
+        "mulps %2, %%xmm7\n\t"
+        "addps %%xmm7, %0"
+    : "+x" (a) : "xm" (ml), "xm" (mr) : "%xmm7"); //Should be compatible with all x86-64 processors
+    //*/
+    return a;
+}
+
 enum_start(ditherMethods)
 enum_value(BAYER2X2, "bayer2", "Bayer 2x2")
 enum_value(BAYER4X4, "bayer4", "Bayer 4x4")
@@ -743,22 +850,24 @@ static ColourOkLabA DitherFloydSteinberg(ColourOkLabA col, int x, int y, int w, 
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
-    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    float inalpha = col.A;
+    col = ColourOkLabAAddAccumulate(col, *diffCol);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     diffCol = &diffErr[(x + boustro) +  y * w];
-    float coeffL = 0.4375f * amtL; float coeffC = 0.4375f * amtC;
-    diffCol->L += outerr.L * coeffL; diffCol->a += outerr.a * coeffC; diffCol->b += outerr.b * coeffC;
+    const ColourOkLabA coeff1 = { 0.4375f * amtL,  0.4375f * amtC, 0.4375f * amtC, 1.0f };
+    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff1);
     diffCol = &diffErr[(x - boustro) + (y + 1) * w];
-    coeffL = 0.1875f * amtL; coeffC = 0.1875f * amtC;
-    diffCol->L += outerr.L * coeffL; diffCol->a += outerr.a * coeffC; diffCol->b += outerr.b * coeffC;
+    const ColourOkLabA coeff2 = { 0.1875f * amtL,  0.1875f * amtC, 0.1875f * amtC, 1.0f };
+    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff2);
     diffCol = &diffErr[ x            + (y + 1) * w];
-    coeffL = 0.3125f * amtL; coeffC = 0.3125f * amtC;
-    diffCol->L += outerr.L * coeffL; diffCol->a += outerr.a * coeffC; diffCol->b += outerr.b * coeffC;
+    const ColourOkLabA coeff3 = { 0.3125f * amtL,  0.3125f * amtC, 0.3125f * amtC, 1.0f };
+    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff3);
     diffCol = &diffErr[(x + boustro) + (y + 1) * w];
-    coeffL = 0.0625f * amtL; coeffC = 0.0625f * amtC;
-    diffCol->L += outerr.L * coeffL; diffCol->a += outerr.a * coeffC; diffCol->b += outerr.b * coeffC;
+    const ColourOkLabA coeff4 = { 0.0625f * amtL,  0.0625f * amtC, 0.0625f * amtC, 1.0f };
+    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff4);
 
+    outcol.A = inalpha;
     return outcol;
 }
 
@@ -766,19 +875,21 @@ static ColourOkLabA DitherFloydFalse(ColourOkLabA col, int x, int y, int w, floa
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
-    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    float inalpha = col.A;
+    col = ColourOkLabAAddAccumulate(col, *diffCol);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    float coeffL = 0.375f * amtL; float coeffC = 0.375f * amtC;
-    float Lerrc = outerr.L * coeffL; float aerrc = outerr.a * coeffC; float berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff1 = { 0.375f * amtL, 0.375f * amtC, 0.375f * amtC, 1.0f };
+    const ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff1);
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
-    coeffL = 0.25f * amtL; coeffC = 0.25f * amtC;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    const ColourOkLabA coeff2 = { 0.25f * amtL, 0.25f * amtC, 0.25f * amtC, 1.0f };
     diffCol = &diffErr[(x + boustro) + (y + 1) * w];
-    diffCol->L += outerr.L * coeffL; diffCol->a += outerr.a * coeffC; diffCol->b += outerr.b * coeffC;
+    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff2);
 
+    outcol.A = inalpha;
     return outcol;
 }
 
@@ -786,45 +897,47 @@ static ColourOkLabA DitherJJN(ColourOkLabA col, int x, int y, int w, float amtL,
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
-    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    float inalpha = col.A;
+    col = ColourOkLabAAddAccumulate(col, *diffCol);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    float coeffL = (7.0f/48.0f) * amtL; float coeffC = (7.0f/48.0f) * amtC;
-    float Lerrc = outerr.L * coeffL; float aerrc = outerr.a * coeffC; float berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff1 = { (7.0f/48.0f) * amtL, (7.0f/48.0f) * amtC, (7.0f/48.0f) * amtC, 1.0f };
+    ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff1);
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (5.0f/48.0f) * amtL; coeffC = (5.0f/48.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff2 = { (5.0f/48.0f) * amtL, (5.0f/48.0f) * amtC, (5.0f/48.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff2);
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x                + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (3.0f/48.0f) * amtL; coeffC = (3.0f/48.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff3 = { (3.0f/48.0f) * amtL, (3.0f/48.0f) * amtC, (3.0f/48.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff3);
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (1.0f/48.0f) * amtL; coeffC = (1.0f/48.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff4 = { (1.0f/48.0f) * amtL, (1.0f/48.0f) * amtC, (1.0f/48.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff4);
     diffCol = &diffErr[(x + 2 * boustro) + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - 2 * boustro) + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
+    outcol.A = inalpha;
     return outcol;
 }
 
@@ -832,45 +945,47 @@ static ColourOkLabA DitherStucki(ColourOkLabA col, int x, int y, int w, float am
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
-    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    float inalpha = col.A;
+    col = ColourOkLabAAddAccumulate(col, *diffCol);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    float coeffL = (8.0f/42.0f) * amtL; float coeffC = (8.0f/42.0f) * amtC;
-    float Lerrc = outerr.L * coeffL; float aerrc = outerr.a * coeffC; float berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff1 = { (8.0f/42.0f) * amtL, (8.0f/42.0f) * amtC, (8.0f/42.0f) * amtC, 1.0f };
+    ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff1);
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (4.0f/42.0f) * amtL; coeffC = (4.0f/42.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff2 = { (4.0f/42.0f) * amtL, (4.0f/42.0f) * amtC, (4.0f/42.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff2);
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x                + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (2.0f/42.0f) * amtL; coeffC = (2.0f/42.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff3 = { (2.0f/42.0f) * amtL, (2.0f/42.0f) * amtC, (2.0f/42.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff3);
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (1.0f/42.0f) * amtL; coeffC = (1.0f/42.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff4 = { (1.0f/42.0f) * amtL, (1.0f/42.0f) * amtC, (1.0f/42.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff4);
     diffCol = &diffErr[(x + 2 * boustro) + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - 2 * boustro) + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
+    outcol.A = inalpha;
     return outcol;
 }
 
@@ -878,32 +993,34 @@ static ColourOkLabA DitherBurkes(ColourOkLabA col, int x, int y, int w, float am
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
-    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    float inalpha = col.A;
+    col = ColourOkLabAAddAccumulate(col, *diffCol);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    float coeffL = (8.0f/32.0f) * amtL; float coeffC = (8.0f/32.0f) * amtC;
-    float Lerrc = outerr.L * coeffL; float aerrc = outerr.a * coeffC; float berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff1 = { (8.0f/32.0f) * amtL, (8.0f/32.0f) * amtC, (8.0f/32.0f) * amtC, 1.0f };
+    ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff1);
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (4.0f/32.0f) * amtL; coeffC = (4.0f/32.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff2 = { (4.0f/32.0f) * amtL, (4.0f/32.0f) * amtC, (4.0f/32.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff2);
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (2.0f/32.0f) * amtL; coeffC = (2.0f/32.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff3 = { (2.0f/32.0f) * amtL, (2.0f/32.0f) * amtC, (2.0f/32.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff3);
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
+    outcol.A = inalpha;
     return outcol;
 }
 
@@ -911,41 +1028,43 @@ static ColourOkLabA DitherSierra(ColourOkLabA col, int x, int y, int w, float am
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
-    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    float inalpha = col.A;
+    col = ColourOkLabAAddAccumulate(col, *diffCol);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    float coeffL = (5.0f/32.0f) * amtL; float coeffC = (5.0f/32.0f) * amtC;
-    float Lerrc = outerr.L * coeffL; float aerrc = outerr.a * coeffC; float berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff1 = { (5.0f/32.0f) * amtL, (5.0f/32.0f) * amtC, (5.0f/32.0f) * amtC, 1.0f };
+    ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff1);
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (4.0f/32.0f) * amtL; coeffC = (4.0f/32.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff2 = { (4.0f/32.0f) * amtL, (4.0f/32.0f) * amtC, (4.0f/32.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff2);
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (3.0f/32.0f) * amtL; coeffC = (3.0f/32.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff3 = { (3.0f/32.0f) * amtL, (3.0f/32.0f) * amtC, (3.0f/32.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff3);
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x                + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (2.0f/32.0f) * amtL; coeffC = (2.0f/32.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff4 = { (2.0f/32.0f) * amtL, (2.0f/32.0f) * amtC, (2.0f/32.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff4);
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
+    outcol.A = inalpha;
     return outcol;
 }
 
@@ -953,34 +1072,36 @@ static ColourOkLabA DitherSierra2Row(ColourOkLabA col, int x, int y, int w, floa
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
-    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    float inalpha = col.A;
+    col = ColourOkLabAAddAccumulate(col, *diffCol);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    float coeffL = (4.0f/16.0f) * amtL; float coeffC = (4.0f/16.0f) * amtC;
+    const ColourOkLabA coeff1 = { (4.0f/16.0f) * amtL, (4.0f/16.0f) * amtC, (4.0f/16.0f) * amtC, 1.0f };
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += outerr.L * coeffL; diffCol->a += outerr.a * coeffC; diffCol->b += outerr.b * coeffC;
+    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff1);
 
-    coeffL = (3.0f/16.0f) * amtL; coeffC = (3.0f/16.0f) * amtC;
-    float Lerrc = outerr.L * coeffL; float aerrc = outerr.a * coeffC; float berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff2 = { (3.0f/16.0f) * amtL, (3.0f/16.0f) * amtC, (3.0f/16.0f) * amtC, 1.0f };
+    ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff2);
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x                + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (2.0f/16.0f) * amtL; coeffC = (2.0f/16.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff3 = { (2.0f/16.0f) * amtL, (2.0f/16.0f) * amtC, (2.0f/16.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff3);
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
-    coeffL = (1.0f/16.0f) * amtL; coeffC = (1.0f/16.0f) * amtC;
-    Lerrc = outerr.L * coeffL; aerrc = outerr.a * coeffC; berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff4 = { (1.0f/16.0f) * amtL, (1.0f/16.0f) * amtC, (1.0f/16.0f) * amtC, 1.0f };
+    errc = ColourOkLabAMultiply(outerr, coeff4);
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
+    outcol.A = inalpha;
     return outcol;
 }
 
@@ -988,19 +1109,21 @@ static ColourOkLabA DitherFilterLite(ColourOkLabA col, int x, int y, int w, floa
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
-    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    float inalpha = col.A;
+    col = ColourOkLabAAddAccumulate(col, *diffCol);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    float coeffL = 0.5f * amtL; float coeffC = 0.5f * amtC;
+    const ColourOkLabA coeff1 = { 0.5f * amtL, 0.5f * amtC, 0.5f * amtC, 1.0f };
     diffCol = &diffErr[(x + boustro) +  y * w];
-    diffCol->L += outerr.L * coeffL; diffCol->a += outerr.a * coeffC; diffCol->b += outerr.b * coeffC;
-    coeffL = 0.25f * amtL; coeffC = 0.25f * amtC;
-    float Lerrc = outerr.L * coeffL; float aerrc = outerr.a * coeffC; float berrc = outerr.b * coeffC;
+    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff1);
+    const ColourOkLabA coeff2 = { 0.25f * amtL, 0.25f * amtC, 0.25f * amtC, 1.0f };
+    const ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff2);
     diffCol = &diffErr[ x            + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - boustro) + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
+    outcol.A = inalpha;
     return outcol;
 }
 
@@ -1008,24 +1131,26 @@ static ColourOkLabA DitherAtkinson(ColourOkLabA col, int x, int y, int w, float 
 {
     ColourOkLabA outerr;
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
-    col.L += diffCol->L; col.a += diffCol->a; col.b += diffCol->b;
+    float inalpha = col.A;
+    col = ColourOkLabAAddAccumulate(col, *diffCol);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    const float coeffL = amtL/6.0f; const float coeffC = amtC/6.0f; //Note: the canonical Atkinson dither only diffuses 3/4 of the error, but we'll normalise this one anyway
-    float Lerrc = outerr.L * coeffL; float aerrc = outerr.a * coeffC; float berrc = outerr.b * coeffC;
+    const ColourOkLabA coeff = { amtL/6.0f, amtC/6.0f, amtC/6.0f, 1.0f }; //Note: the canonical Atkinson dither only diffuses 3/4 of the error, but we'll normalise this one anyway
+    const ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff);
     diffCol = &diffErr[(x + boustro)     +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x                + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
     diffCol = &diffErr[ x                + (y + 2) * w];
-    diffCol->L += Lerrc; diffCol->a += aerrc; diffCol->b += berrc;
+    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
 
+    outcol.A = inalpha;
     return outcol;
 }
 
@@ -1039,10 +1164,70 @@ typedef struct
     double sumb;
 } KMean;
 
-//Currently uses the k-means algorithm
-static void GetBestPalette(ColourRGBA8* pal, int numColours, ColourRGBA* pixels, long long numPixels, float uvbias, float bright, float contrast)
+ColourOkLabA* adptColours;
+KMean* adptMeans;
+long long adptNumPixels;
+int adptNumColours;
+float adptuvbias;
+volatile long long adptCurrentStartPixel;
+volatile int canStartNewParallelLoops;
+volatile int numThreadsSpawned;
+#define MAX_ADAPTIVE_THREADS 2048
+#define ADAPTIVE_CHUNKSIZE 8191
+volatile unsigned char adptThreadActive[MAX_ADAPTIVE_THREADS];
+
+//Main embarrasingly parallel loop in the palette-finding function
+static int GetBestPaletteParallelLoop()
 {
-    ColourOkLabA* colours = malloc(numPixels * sizeof(ColourOkLabA));
+    if (!canStartNewParallelLoops) return 1;
+    long long s = adptCurrentStartPixel;
+    adptCurrentStartPixel += ADAPTIVE_CHUNKSIZE;
+    long long e;
+    if (!canStartNewParallelLoops) return 1;
+    if (adptCurrentStartPixel > adptNumPixels)
+    {
+        e = adptNumPixels;
+        if (!canStartNewParallelLoops) return 1;
+        canStartNewParallelLoops = 0;
+    }
+    else e = s + ADAPTIVE_CHUNKSIZE;
+    ColourOkLabA* colours = adptColours;
+    KMean* means = adptMeans;
+    int numColours = adptNumColours;
+    float uvbias = adptuvbias;
+    for (long long i = s; i < e; i++)
+    {
+        ColourOkLabA col = colours[i];
+        float lowestDistance = 999999999999999999999999.9;
+        int chosenColour = 0;
+        for (int j = 0; j < numColours; j++)
+        {
+            const ColourOkLabA incol = means[j].mean;
+            const float dL = (col.L - incol.L) * uvbias;
+            const float da = col.a - incol.a;
+            const float db = col.b - incol.b;
+            const float dist = (dL * dL) + (da * da) + (db * db);
+            if (dist < lowestDistance)
+            {
+                lowestDistance = dist;
+                chosenColour = j;
+            }
+        }
+        KMean* m = &means[chosenColour];
+        m->sumL += (double)col.L;
+        m->suma += (double)col.a;
+        m->sumb += (double)col.b;
+        m->numInCluster++;
+    }
+    if (!canStartNewParallelLoops) return 1;
+    else return 0;
+}
+
+//Currently uses the k-means algorithm
+static void GetBestPalette(ColourRGBA8* pal, int numColours, ColourRGBA* pixels, int w, int h, float uvbias, float bright, float contrast)
+{
+    long long fullNumPixels = w * h;
+    ColourOkLabA* fullColours = malloc(fullNumPixels * sizeof(ColourOkLabA));
     KMean* means = malloc(numColours * sizeof(KMean));
     //Initialise means
     for (int i = 0; i < numColours; i++)
@@ -1053,10 +1238,38 @@ static void GetBestPalette(ColourRGBA8* pal, int numColours, ColourRGBA* pixels,
         means[i] = m;
     }
     //Initialise colour array
-    for (long long i = 0; i < numPixels; i++)
+    for (long long i = 0; i < fullNumPixels; i++)
     {
-        colours[i] = ColourAdjust(SRGBToOkLab(pixels[i]), bright, contrast);
+        fullColours[i] = ColourAdjust(SRGBToOkLab(pixels[i]), bright, contrast);
     }
+    //Subsample image (we don't need to sample EVERY SINGLE PIXEL in most images)
+    int xSubsampleFactor = (w / 768) + 1;
+    int ySubsampleFactor = (h / 768) + 1;
+    int newWidth = w / xSubsampleFactor;
+    int newHeight = h / ySubsampleFactor;
+    float mF = (float)(1.0 / (double)(xSubsampleFactor * ySubsampleFactor));
+    ColourOkLabA multFac = { mF, mF, mF, mF };
+    long long numPixels = newWidth * newHeight;
+    ColourOkLabA* colours = malloc(numPixels * sizeof(ColourOkLabA));
+    for (int i = 0; i < newHeight; i++)
+    {
+        for (int j = 0; j < newWidth; j++)
+        {
+            long long inIndex = (j * xSubsampleFactor) + (i * w * ySubsampleFactor);
+            ColourOkLabA* sampRect = fullColours + inIndex;
+            ColourOkLabA sumC = { 0.0f, 0.0f, 0.0f, 0.0f };
+            for (int v = 0; v < ySubsampleFactor; v++)
+            {
+                for (int u = 0; u < xSubsampleFactor; u++)
+                {
+                    ColourOkLabA sampCol = sampRect[u + v * w];
+                    sumC = ColourOkLabAAddAccumulate(sumC, sampCol);
+                }
+            }
+            colours[j + i * newWidth] = ColourOkLabAMultiply(sumC, multFac);
+        }
+    }
+    free(fullColours);
     //Pick some means
     for (int i = 0; i < numColours; i++)
     {
@@ -1066,6 +1279,12 @@ static void GetBestPalette(ColourRGBA8* pal, int numColours, ColourRGBA* pixels,
         m.mean = meancol;
         means[i] = m;
     }
+
+    adptColours = colours;
+    adptMeans = means;
+    adptNumColours = numColours;
+    adptNumPixels = numPixels;
+    adptuvbias = uvbias;
 
     //Iterate the means
     int iterationsLeft = numColours + 48;
@@ -1081,7 +1300,7 @@ static void GetBestPalette(ColourRGBA8* pal, int numColours, ColourRGBA* pixels,
             means[i] = m;
         }
         //Associate each colour with the closest mean
-        for (long long i = 0; i < numPixels; i++)
+        for (long long i = 0; i < ADAPTIVE_CHUNKSIZE; i++)
         {
             ColourOkLabA col = colours[i];
             float lowestDistance = 999999999999999999999999.9;
@@ -1106,6 +1325,27 @@ static void GetBestPalette(ColourRGBA8* pal, int numColours, ColourRGBA* pixels,
             m.numInCluster++;
             means[chosenColour] = m;
         }
+        adptCurrentStartPixel = ADAPTIVE_CHUNKSIZE;
+        canStartNewParallelLoops = 1;
+        adptThreadActive[0] = 1;
+        while (1)
+        {
+            if (GetBestPaletteParallelLoop())
+            {
+                adptThreadActive[0] = 0;
+                int allThreadsDone = 1;
+                for (int i = 0; i < numThreadsSpawned; i++)
+                {
+                    if (adptThreadActive[i])
+                    {
+                        allThreadsDone = 0;
+                        break;
+                    }
+                }
+                if (allThreadsDone) break;
+            }
+        }
+
         //Calculate means
         double meandiff = 0.0;
         for (int i = 0; i < numColours; i++)
@@ -1154,6 +1394,11 @@ static void prepare(GeglOperation* operation)
     space = gegl_operation_get_source_space(operation, "input");
     gegl_operation_set_format(operation, "input", babl_format_with_space("RGBA float", space));
     gegl_operation_set_format(operation, "output", babl_format_with_space("RGBA float", space));
+    numThreadsSpawned = 0;
+    for (int i = 0; i < MAX_ADAPTIVE_THREADS; i++)
+    {
+        adptThreadActive[i] = 0;
+    }
 
     //Get palette
     GeglProperties* props = GEGL_PROPERTIES(operation);
@@ -1243,6 +1488,7 @@ static void prepare(GeglOperation* operation)
             selpalette = malloc(palSize * sizeof(ColourRGBA8));
             hasFoundBestColours = 0;
             hasStartedToFindBestColours = 0;
+            canStartNewParallelLoops = 0;
             break;
         case FROMFILE: //Fallback on my 16-colour palette for now
             palSize = 16;
@@ -1260,11 +1506,13 @@ static void prepare(GeglOperation* operation)
 
 static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf, const GeglRectangle* roi, gint level)
 {
+    int threadNum = numThreadsSpawned;
+    numThreadsSpawned++;
     //Get properties
     GeglProperties* props = GEGL_PROPERTIES(op);
     if (!hasFoundBestColours) //hacky
     {
-        if (!hasStartedToFindBestColours)
+        if (!hasStartedToFindBestColours) //First thread spanwed by GEGL gets to coordinate the others
         {
             hasStartedToFindBestColours = 1; //for god's sake please get here really really fast before some other stupid chunk starts processing
             GeglRectangle totalRect = gegl_operation_get_bounding_box(op);
@@ -1272,7 +1520,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             const Babl* fmt = babl_format_with_space("RGBA float", space);
             ColourRGBA* totalImg = malloc(numpix * sizeof(ColourRGBA));
             gegl_buffer_get(inBuf, &totalRect, 1.0, fmt, totalImg, GEGL_AUTO_ROWSTRIDE, GEGL_ABYSS_CLAMP);
-            GetBestPalette(selpalette, palSize, totalImg, numpix, 1.0f/props->adptchromabias, props->adptBright, props->adptContrast);
+            GetBestPalette(selpalette, palSize, totalImg, totalRect.width, totalRect.height, 1.0f/props->adptchromabias, props->adptBright, props->adptContrast);
             free(totalImg);
             for (int i = 0; i < palSize; i++)
             {
@@ -1281,15 +1529,29 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             }
             hasFoundBestColours = 1;
         }
-        else
+        else //Other threads only join in the main embarrasingly parallel loop
         {
             while (1)
             {
-                if (hasFoundBestColours) break; //wait for the first thread to find the colours (busy loop for now)
+                while (1)
+                {
+                    if (canStartNewParallelLoops) break;
+                    if (hasFoundBestColours) break;
+                }
+                if (hasFoundBestColours) break;
+                adptThreadActive[threadNum] = 1;
+                while (1)
+                {
+                    if (GetBestPaletteParallelLoop())
+                    {
+                        adptThreadActive[threadNum] = 0;
+                        break;
+                    }
+                }
             }
         }
     }
-
+    //Palette is fully known by this point, now let's dither
     const Babl* fmt = babl_format_with_space("RGBA float", space);
     glong x = roi->x;
     glong y = roi->y;
