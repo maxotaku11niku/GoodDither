@@ -166,34 +166,26 @@ typedef struct
 static inline ColourOkLabA ColourOkLabAAdd(ColourOkLabA l, ColourOkLabA r)
 {
     ColourOkLabA c;
-    /*/
-    c.L = l.L + r.L;
-    c.a = l.a + r.a;
-    c.b = l.b + r.b;
-    c.A = l.A + r.A;
-    //*/
-    /**/
-    __asm (
-        "movups %1, %0\n\t"
-        "addps %2, %0"
-    : "=x" (c) : "xm" (l), "xm" (r)); //Should be compatible with all x86-64 processors
-    //*/
+    float ca[4];
+    float la[4] = { l.L, l.a, l.b, l.A };
+    float ra[4] = { r.L, r.a, r.b, r.A };
+    for (int i = 0; i < 4; i++)
+    {
+        ca[i] = la[i] + ra[i];
+    }
+    c.L = ca[0]; c.a = ca[1]; c.b = ca[2]; c.A = ca[3];
     return c;
 }
 
 static inline ColourOkLabA ColourOkLabAAddAccumulate(ColourOkLabA l, ColourOkLabA r)
 {
-    /*/
-    l.L += r.L;
-    l.a += r.a;
-    l.b += r.b;
-    l.A += r.A;
-    //*/
-    /**/
-    __asm (
-        "addps %1, %0"
-    : "+x" (l) : "xm" (r)); //Should be compatible with all x86-64 processors
-    //*/
+    float la[4] = { l.L, l.a, l.b, l.A };
+    float ra[4] = { r.L, r.a, r.b, r.A };
+    for (int i = 0; i < 4; i++)
+    {
+        la[i] += ra[i];
+    }
+    l.L = la[0]; l.a = la[1]; l.b = la[2]; l.A = la[3];
     return l;
 }
 
@@ -201,72 +193,54 @@ static inline ColourOkLabA ColourOkLabAMultiply(ColourOkLabA l, ColourOkLabA r)
 {
 
     ColourOkLabA c;
-    /*/
-    c.L = l.L * r.L;
-    c.a = l.a * r.a;
-    c.b = l.b * r.b;
-    c.A = l.A * r.A;
-    //*/
-    /**/
-    __asm (
-        "movups %1, %0\n\t"
-        "mulps %2, %0"
-    : "=x" (c) : "xm" (l), "xm" (r)); //Should be compatible with all x86-64 processors
-    //*/
+    float ca[4];
+    float la[4] = { l.L, l.a, l.b, l.A };
+    float ra[4] = { r.L, r.a, r.b, r.A };
+    for (int i = 0; i < 4; i++)
+    {
+        ca[i] = la[i] * ra[i];
+    }
+    c.L = ca[0]; c.a = ca[1]; c.b = ca[2]; c.A = ca[3];
     return c;
 }
 
 static inline ColourOkLabA ColourOkLabAMultiplyAccumulate(ColourOkLabA l, ColourOkLabA r)
 {
-    /*/
-    l.L *= r.L;
-    l.a *= r.a;
-    l.b *= r.b;
-    l.A *= r.A;
-    //*/
-    /**/
-    __asm (
-        "mulps %1, %0"
-    : "+x" (l) : "xm" (r)); //Should be compatible with all x86-64 processors
-    //*/
+    float la[4] = { l.L, l.a, l.b, l.A };
+    float ra[4] = { r.L, r.a, r.b, r.A };
+    for (int i = 0; i < 4; i++)
+    {
+        la[i] *= ra[i];
+    }
+    l.L = la[0]; l.a = la[1]; l.b = la[2]; l.A = la[3];
     return l;
 }
 
 static inline ColourOkLabA ColourOkLabAFMA(ColourOkLabA a, ColourOkLabA ml, ColourOkLabA mr)
 {
     ColourOkLabA c;
-    /*/
-    c.L = a.L + (ml.L * mr.L);
-    c.a = a.a + (ml.a * mr.a);
-    c.b = a.b + (ml.b * mr.b);
-    c.A = a.A + (ml.A * mr.A);
-    //*/
-    /**/
-    __asm (
-        "movups %2, %%xmm7\n\t"
-        "mulps %3, %%xmm7\n\t"
-        "movups %1, %0\n\t"
-        "addps %%xmm7, %0"
-    : "=x" (c) : "xm" (a), "xm" (ml), "xm" (mr) : "%xmm7"); //Should be compatible with all x86-64 processors
-    //*/
+    float ca[4];
+    float aa[4] = { a.L, a.a, a.b, a.A };
+    float mla[4] = { ml.L, ml.a, ml.b, ml.A };
+    float mra[4] = { mr.L, mr.a, mr.b, mr.A };
+    for (int i = 0; i < 4; i++)
+    {
+        ca[i] = aa[i] + (mla[i] * mra[i]);
+    }
+    c.L = ca[0]; c.a = ca[1]; c.b = ca[2]; c.A = ca[3];
     return c;
 }
 
 static inline ColourOkLabA ColourOkLabAFMAAccumulate(ColourOkLabA a, ColourOkLabA ml, ColourOkLabA mr)
 {
-    /*/
-    a.L += ml.L * mr.L;
-    a.a += ml.a * mr.a;
-    a.b += ml.b * mr.b;
-    a.A += ml.A * mr.A;
-    //*/
-    /**/
-    __asm (
-        "movups %1, %%xmm7\n\t"
-        "mulps %2, %%xmm7\n\t"
-        "addps %%xmm7, %0"
-    : "+x" (a) : "xm" (ml), "xm" (mr) : "%xmm7"); //Should be compatible with all x86-64 processors
-    //*/
+    float aa[4] = { a.L, a.a, a.b, a.A };
+    float mla[4] = { ml.L, ml.a, ml.b, ml.A };
+    float mra[4] = { mr.L, mr.a, mr.b, mr.A };
+    for (int i = 0; i < 4; i++)
+    {
+        aa[i] += (mla[i] * mra[i]);
+    }
+    a.L = aa[0]; a.a = aa[1]; a.b = aa[2]; a.A = aa[3];
     return a;
 }
 
