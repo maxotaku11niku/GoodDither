@@ -589,6 +589,9 @@ int palSize;
 ColourRGBA8* selpalette;
 ColourRGBA* srcpalette;
 ColourOkLabA* palette;
+float minL;
+float maxL;
+float maxC;
 Babl* space;
 unsigned int rngNum[4];
 
@@ -749,6 +752,18 @@ static ColourOkLabA GetClosestColourOkLabWithError(ColourOkLabA col, ColourOkLab
     return outcol;
 }
 
+static ColourOkLabA ClampColourOkLab(ColourOkLabA col)
+{
+    if (col.L < minL) col.L = minL; else if (col.L > maxL) col.L = maxL;
+    float sat = hypotf(col.a, col.b);
+    if (sat > maxC)
+    {
+        col.a *= maxC/sat;
+        col.b *= maxC/sat;
+    }
+    return col;
+}
+
 static ColourRGBA OrderedDitherBayer2x2(ColourOkLabA col, int x, int y, float amtL, float amtS, float amtH, float bright, float contrast, float uvbias)
 {
     col.L += bayer2x2[(y % 2) * 2 + (x % 2)] * amtL;
@@ -826,6 +841,7 @@ static ColourOkLabA DitherFloydSteinberg(ColourOkLabA col, int x, int y, int w, 
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
     col = ColourOkLabAAddAccumulate(col, *diffCol);
+    col = ClampColourOkLab(col);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     diffCol = &diffErr[(x + boustro) +  y * w];
@@ -851,6 +867,7 @@ static ColourOkLabA DitherFloydFalse(ColourOkLabA col, int x, int y, int w, floa
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
     col = ColourOkLabAAddAccumulate(col, *diffCol);
+    col = ClampColourOkLab(col);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     const ColourOkLabA coeff1 = { 0.375f * amtL, 0.375f * amtC, 0.375f * amtC, 1.0f };
@@ -873,6 +890,7 @@ static ColourOkLabA DitherJJN(ColourOkLabA col, int x, int y, int w, float amtL,
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
     col = ColourOkLabAAddAccumulate(col, *diffCol);
+    col = ClampColourOkLab(col);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     const ColourOkLabA coeff1 = { (7.0f/48.0f) * amtL, (7.0f/48.0f) * amtC, (7.0f/48.0f) * amtC, 1.0f };
@@ -921,6 +939,7 @@ static ColourOkLabA DitherStucki(ColourOkLabA col, int x, int y, int w, float am
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
     col = ColourOkLabAAddAccumulate(col, *diffCol);
+    col = ClampColourOkLab(col);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     const ColourOkLabA coeff1 = { (8.0f/42.0f) * amtL, (8.0f/42.0f) * amtC, (8.0f/42.0f) * amtC, 1.0f };
@@ -969,6 +988,7 @@ static ColourOkLabA DitherBurkes(ColourOkLabA col, int x, int y, int w, float am
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
     col = ColourOkLabAAddAccumulate(col, *diffCol);
+    col = ClampColourOkLab(col);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     const ColourOkLabA coeff1 = { (8.0f/32.0f) * amtL, (8.0f/32.0f) * amtC, (8.0f/32.0f) * amtC, 1.0f };
@@ -1004,6 +1024,7 @@ static ColourOkLabA DitherSierra(ColourOkLabA col, int x, int y, int w, float am
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
     col = ColourOkLabAAddAccumulate(col, *diffCol);
+    col = ClampColourOkLab(col);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     const ColourOkLabA coeff1 = { (5.0f/32.0f) * amtL, (5.0f/32.0f) * amtC, (5.0f/32.0f) * amtC, 1.0f };
@@ -1048,6 +1069,7 @@ static ColourOkLabA DitherSierra2Row(ColourOkLabA col, int x, int y, int w, floa
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
     col = ColourOkLabAAddAccumulate(col, *diffCol);
+    col = ClampColourOkLab(col);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     const ColourOkLabA coeff1 = { (4.0f/16.0f) * amtL, (4.0f/16.0f) * amtC, (4.0f/16.0f) * amtC, 1.0f };
@@ -1085,6 +1107,7 @@ static ColourOkLabA DitherFilterLite(ColourOkLabA col, int x, int y, int w, floa
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
     col = ColourOkLabAAddAccumulate(col, *diffCol);
+    col = ClampColourOkLab(col);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     const ColourOkLabA coeff1 = { 0.5f * amtL, 0.5f * amtC, 0.5f * amtC, 1.0f };
@@ -1107,6 +1130,7 @@ static ColourOkLabA DitherAtkinson(ColourOkLabA col, int x, int y, int w, float 
     ColourOkLabA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
     col = ColourOkLabAAddAccumulate(col, *diffCol);
+    col = ClampColourOkLab(col);
     ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     const ColourOkLabA coeff = { amtL/6.0f, amtC/6.0f, amtC/6.0f, 1.0f }; //Note: the canonical Atkinson dither only diffuses 3/4 of the error, but we'll normalise this one anyway
@@ -1694,10 +1718,16 @@ static void prepare(GeglOperation* operation)
     }
     srcpalette = malloc(palSize * sizeof(ColourRGBA));
     palette = malloc(palSize * sizeof(ColourOkLabA));
+    minL = 1.0f; maxL = 0.0f;
+    maxC = 0.0f;
     for (int i = 0; i < palSize; i++)
     {
         srcpalette[i] = SRGB8ToLinearFloat(selpalette[i]);
-        palette[i] = SRGBToOkLab(srcpalette[i]);
+        ColourOkLabA labcol = SRGBToOkLab(srcpalette[i]);
+        palette[i] = labcol;
+        if (labcol.L < minL) minL = labcol.L; if (labcol.L > maxL) maxL = labcol.L;
+        float sat = hypotf(labcol.a, labcol.b);
+        if (sat > maxC) maxC = sat;
     }
 }
 
@@ -1719,10 +1749,16 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             gegl_buffer_get(inBuf, &totalRect, 1.0, fmt, totalImg, GEGL_AUTO_ROWSTRIDE, GEGL_ABYSS_CLAMP);
             GetBestPalette(selpalette, palSize, totalImg, totalRect.width, totalRect.height, 1.0f/props->adptchromabias, props->adptBright, props->adptContrast);
             free(totalImg);
+            minL = 1.0f; maxL = 0.0f;
+            maxC = 0.0f;
             for (int i = 0; i < palSize; i++)
             {
                 srcpalette[i] = SRGB8ToLinearFloat(selpalette[i]);
-                palette[i] = SRGBToOkLab(srcpalette[i]);
+                ColourOkLabA labcol = SRGBToOkLab(srcpalette[i]);
+                palette[i] = labcol;
+                if (labcol.L < minL) minL = labcol.L; if (labcol.L > maxL) maxL = labcol.L;
+                float sat = hypotf(labcol.a, labcol.b);
+                if (sat > maxC) maxC = sat;
             }
             hasFoundBestColours = 1;
         }
