@@ -164,6 +164,32 @@ static inline ColourOkLabA ColourOkLabAAddAccumulate(ColourOkLabA l, ColourOkLab
     return l;
 }
 
+static inline ColourOkLabA ColourOkLabASub(ColourOkLabA l, ColourOkLabA r)
+{
+    ColourOkLabA c;
+    float ca[4];
+    float la[4] = { l.L, l.a, l.b, l.A };
+    float ra[4] = { r.L, r.a, r.b, r.A };
+    for (int i = 0; i < 4; i++)
+    {
+        ca[i] = la[i] - ra[i];
+    }
+    c.L = ca[0]; c.a = ca[1]; c.b = ca[2]; c.A = ca[3];
+    return c;
+}
+
+static inline ColourOkLabA ColourOkLabASubAccumulate(ColourOkLabA l, ColourOkLabA r)
+{
+    float la[4] = { l.L, l.a, l.b, l.A };
+    float ra[4] = { r.L, r.a, r.b, r.A };
+    for (int i = 0; i < 4; i++)
+    {
+        la[i] -= ra[i];
+    }
+    l.L = la[0]; l.a = la[1]; l.b = la[2]; l.A = la[3];
+    return l;
+}
+
 static inline ColourOkLabA ColourOkLabAMultiply(ColourOkLabA l, ColourOkLabA r)
 {
 
@@ -183,6 +209,33 @@ static inline ColourOkLabA ColourOkLabAMultiplyAccumulate(ColourOkLabA l, Colour
 {
     float la[4] = { l.L, l.a, l.b, l.A };
     float ra[4] = { r.L, r.a, r.b, r.A };
+    for (int i = 0; i < 4; i++)
+    {
+        la[i] *= ra[i];
+    }
+    l.L = la[0]; l.a = la[1]; l.b = la[2]; l.A = la[3];
+    return l;
+}
+
+static inline ColourOkLabA ColourOkLabAScalarMultiply(ColourOkLabA l, float r)
+{
+
+    ColourOkLabA c;
+    float ca[4];
+    float la[4] = { l.L, l.a, l.b, l.A };
+    float ra[4] = { r, r, r, r };
+    for (int i = 0; i < 4; i++)
+    {
+        ca[i] = la[i] * ra[i];
+    }
+    c.L = ca[0]; c.a = ca[1]; c.b = ca[2]; c.A = ca[3];
+    return c;
+}
+
+static inline ColourOkLabA ColourOkLabAScalarMultiplyAccumulate(ColourOkLabA l, float r)
+{
+    float la[4] = { l.L, l.a, l.b, l.A };
+    float ra[4] = { r, r, r, r };
     for (int i = 0; i < 4; i++)
     {
         la[i] *= ra[i];
@@ -217,6 +270,28 @@ static inline ColourOkLabA ColourOkLabAFMAAccumulate(ColourOkLabA a, ColourOkLab
     }
     a.L = aa[0]; a.a = aa[1]; a.b = aa[2]; a.A = aa[3];
     return a;
+}
+
+//Only dots the first 3 components together since alpha isn't used in colour comparisons
+static inline float ColourOkLabADotProduct(ColourOkLabA l, ColourOkLabA r)
+{
+    float la[4] = { l.L, l.a, l.b, l.A };
+    float ra[4] = { r.L, r.a, r.b, r.A };
+    float out = 0.0f;
+    for (int i = 0; i < 3; i++)
+    {
+        out += (la[i] * ra[i]);
+    }
+    return out;
+}
+
+//Only crosses the first 3 components together because the cross product is a uniquely 3-dimensional operator
+static inline ColourOkLabA ColourOkLabACrossProduct(ColourOkLabA l, ColourOkLabA r)
+{
+    float la[4] = { l.L, l.a, l.b, l.A };
+    float ra[4] = { r.L, r.a, r.b, r.A };
+    ColourOkLabA out = { la[1] * ra[2] - la[2] * ra[1], la[2] * ra[0] - la[0] * ra[2], la[0] * ra[1] - la[1] * ra[0], l.A };
+    return out;
 }
 
 enum_start(ditherMethods)
@@ -746,6 +821,95 @@ static void SortColourIndicesByLuma(int* indexArray, int len)
     }
 }
 
+//This function projects the target colour along a line defined by two colour vertices
+static ColourOkLabA GetMixRatios2(ColourOkLabA target, ColourOkLabA col0, ColourOkLabA col1)
+{
+    ColourOkLabA tp = ColourOkLabASub(target, col0);
+    ColourOkLabA b0 = ColourOkLabASub(col1, col0);
+    float n2 = ColourOkLabADotProduct(b0, b0);
+    float tc = ColourOkLabADotProduct(tp, b0);
+    ColourOkLabA out = { 1.0f - (tc/n2), 1.0f, 1.0f, 1.0f };
+    return out;
+}
+
+//This function projects the target colour on a triangle defined by three colour vertices
+static ColourOkLabA GetMixRatios3(ColourOkLabA target, ColourOkLabA col0, ColourOkLabA col1, ColourOkLabA col2)
+{
+    ColourOkLabA tp = ColourOkLabASub(target, col0);
+    ColourOkLabA b0 = ColourOkLabASub(col1, col0);
+    ColourOkLabA b1 = ColourOkLabASub(col2, col0);
+    ColourOkLabA b2 = ColourOkLabACrossProduct(b0, b1);
+    ColourOkLabA b1xb2 = ColourOkLabACrossProduct(b1, b2);
+    float det = ColourOkLabADotProduct(b0, b1xb2);
+    ColourOkLabA mat[2];
+    mat[0] = b1xb2;
+    mat[1] = ColourOkLabACrossProduct(b2, b0);
+    float fac1 = ColourOkLabADotProduct(mat[0], tp)/det;
+    float fac2 = ColourOkLabADotProduct(mat[1], tp)/det;
+    //Clamping terms reproject out-of-gamut colours on the edges of the triangle
+    if (fac1 + fac2 > 1.0f)
+    {
+        ColourOkLabA newRatios = GetMixRatios2(target, col1, col2);
+        ColourOkLabA realOut = { 0.0f, newRatios.L, 1.0f, 1.0f };
+        return realOut;
+    }
+    if (fac1 < 0.0f)
+    {
+        ColourOkLabA newRatios = GetMixRatios2(target, col0, col2);
+        ColourOkLabA realOut = { newRatios.L, newRatios.L, 1.0f, 1.0f };
+        return realOut;
+    }
+    if (fac2 < 0.0f)
+    {
+        return GetMixRatios2(target, col0, col1);
+    }
+    ColourOkLabA out = { 1.0f - fac1 - fac2, 1.0f - fac2, 1.0f, 1.0f };
+    return out;
+}
+
+//This function expresses the target colour in terms of a tetrahedral space defined by four colour vertices
+static ColourOkLabA GetMixRatios4(ColourOkLabA target, ColourOkLabA col0, ColourOkLabA col1, ColourOkLabA col2, ColourOkLabA col3)
+{
+    ColourOkLabA tp = ColourOkLabASub(target, col0);
+    ColourOkLabA b0 = ColourOkLabASub(col1, col0);
+    ColourOkLabA b1 = ColourOkLabASub(col2, col0);
+    ColourOkLabA b2 = ColourOkLabASub(col3, col0);
+    ColourOkLabA b1xb2 = ColourOkLabACrossProduct(b1, b2);
+    float det = ColourOkLabADotProduct(b0, b1xb2);
+    ColourOkLabA mat[3];
+    mat[0] = b1xb2;
+    mat[1] = ColourOkLabACrossProduct(b2, b0);
+    mat[2] = ColourOkLabACrossProduct(b0, b1);
+    float fac1 = ColourOkLabADotProduct(mat[0], tp)/det;
+    float fac2 = ColourOkLabADotProduct(mat[1], tp)/det;
+    float fac3 = ColourOkLabADotProduct(mat[2], tp)/det;
+    //Clamping terms reproject out-of-gamut colours on the faces of the tetrahedron
+    if (fac1 + fac2 + fac3 > 1.0f)
+    {
+        ColourOkLabA newRatios = GetMixRatios3(target, col1, col2, col3);
+        ColourOkLabA realOut = { 0.0f, newRatios.L, newRatios.a, 1.0f };
+        return realOut;
+    }
+    if (fac1 < 0.0f)
+    {
+        ColourOkLabA newRatios = GetMixRatios3(target, col0, col2, col3);
+        ColourOkLabA realOut = { newRatios.L, newRatios.L, newRatios.a, 1.0f };
+        return realOut;
+    }
+    if (fac2 < 0.0f)
+    {
+        ColourOkLabA newRatios = GetMixRatios3(target, col0, col1, col3);
+        ColourOkLabA realOut = { newRatios.L, newRatios.a, newRatios.a, 1.0f };
+        return realOut;
+    }
+    if (fac3 < 0.0f)
+    {
+        return GetMixRatios3(target, col0, col1, col2);
+    }
+    ColourOkLabA out = { 1.0f - fac1 - fac2 - fac3, 1.0f - fac2 - fac3, 1.0f - fac3, 1.0f };
+    return out;
+}
+
 static ColourRGBA OrderedDitherBayer2x2(ColourOkLabA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
 {
     ColourOkLabA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -758,12 +922,13 @@ static ColourRGBA OrderedDitherBayer2x2(ColourOkLabA col, int x, int y, float am
         int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
         colourList[i] = outInd;
         ColourOkLabA palCol = palette[outInd];
-        palCol.L = -palCol.L; palCol.a = -palCol.a; palCol.b = -palCol.b; palCol.A = -palCol.A;
-        ColourOkLabA outerr = ColourOkLabAAdd(col, palCol);
+        ColourOkLabA outerr = ColourOkLabASub(col, palCol);
         accumErr = ColourOkLabAAddAccumulate(accumErr, outerr);
     }
     SortColourIndicesByLuma(colourList, 4);
-    return srcpalette[colourList[bayer2x2i[(y % 2) * 2 + (x % 2)]]];
+    ColourRGBA outcol = srcpalette[colourList[bayer2x2i[(y % 2) * 2 + (x % 2)]]];
+    outcol.A = col.A;
+    return outcol;
 }
 
 static ColourRGBA OrderedDitherBayer4x4(ColourOkLabA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
@@ -778,159 +943,205 @@ static ColourRGBA OrderedDitherBayer4x4(ColourOkLabA col, int x, int y, float am
         int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
         colourList[i] = outInd;
         ColourOkLabA palCol = palette[outInd];
-        palCol.L = -palCol.L; palCol.a = -palCol.a; palCol.b = -palCol.b; palCol.A = -palCol.A;
-        ColourOkLabA outerr = ColourOkLabAAdd(col, palCol);
+        ColourOkLabA outerr = ColourOkLabASub(col, palCol);
         accumErr = ColourOkLabAAddAccumulate(accumErr, outerr);
     }
     SortColourIndicesByLuma(colourList, 16);
-    return srcpalette[colourList[bayer4x4i[(y % 4) * 4 + (x % 4)]]];
+    ColourRGBA outcol = srcpalette[colourList[bayer4x4i[(y % 4) * 4 + (x % 4)]]];
+    outcol.A = col.A;
+    return outcol;
 }
 
 static ColourRGBA OrderedDitherBayer8x8(ColourOkLabA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
 {
     ColourOkLabA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
     ColourOkLabA coeff = { amtL, amtC, amtC, 0.0f };
-    int uniqueCols[8];
+    int uniqueCols[4];
     int numUniqueCols = 0;
-    int colFreq[512];
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 4; i++)
     {
         uniqueCols[i] = -1;
     }
-    for (int i = 0; i < 64; i++)
+    for (int i = 0; i < 24; i++)
     {
         ColourOkLabA tempCol = ColourOkLabAFMA(col, accumErr, coeff);
         tempCol = ClampColourOkLab(tempCol);
         int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
-        for (int j = 0; j < 8; j++)
+        for (int j = 0; j < 4; j++)
         {
             if (uniqueCols[j] < 0)
             {
                 uniqueCols[j] = outInd;
-                colFreq[outInd] = 1;
                 numUniqueCols++;
                 break;
             }
             else if (uniqueCols[j] == outInd)
             {
-                colFreq[outInd]++;
                 break;
             }
         }
+        if (numUniqueCols >= 4) break;
         ColourOkLabA palCol = palette[outInd];
-        palCol.L = -palCol.L; palCol.a = -palCol.a; palCol.b = -palCol.b; palCol.A = -palCol.A;
-        ColourOkLabA outerr = ColourOkLabAAdd(col, palCol);
+        ColourOkLabA outerr = ColourOkLabASub(col, palCol);
         accumErr = ColourOkLabAAddAccumulate(accumErr, outerr);
     }
     SortColourIndicesByLuma(uniqueCols, numUniqueCols);
-    int curPos = 0;
-    int selInd = bayer8x8i[(y % 8) * 8 + (x % 8)];
-    for (int i = 0; i < numUniqueCols - 1; i++)
+    ColourOkLabA mixRatio; //Hey, who left a perfectly good data structure lying around?
+    switch (numUniqueCols)
     {
-        int thisCol = uniqueCols[i];
-        int curNumOccur = colFreq[thisCol];
-        curPos += curNumOccur;
-        if (selInd < curPos) return srcpalette[uniqueCols[i]];
+        case 1:
+        {
+            ColourRGBA outcol = srcpalette[uniqueCols[0]];
+            outcol.A = col.A;
+            return outcol;
+        }
+        case 2:
+            mixRatio = GetMixRatios2(col, palette[uniqueCols[0]], palette[uniqueCols[1]]);
+            break;
+        case 3:
+            mixRatio = GetMixRatios3(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]]);
+            break;
+        case 4:
+            mixRatio = GetMixRatios4(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]], palette[uniqueCols[3]]);
+            break;
     }
-    return srcpalette[uniqueCols[numUniqueCols - 1]];
+    int selInd = bayer8x8i[(y % 8) * 8 + (x % 8)];
+    float threshold = (((float)selInd) + 0.5f) * 0.015625f;
+    ColourRGBA outcol;
+    if (threshold <= mixRatio.L) outcol = srcpalette[uniqueCols[0]];
+    else if (threshold <= mixRatio.a) outcol = srcpalette[uniqueCols[1]];
+    else if (threshold <= mixRatio.b) outcol = srcpalette[uniqueCols[2]];
+    else outcol = srcpalette[uniqueCols[3]];
+    outcol.A = col.A;
+    return outcol;
 }
 
 static ColourRGBA OrderedDitherBayer16x16(ColourOkLabA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
 {
     ColourOkLabA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
     ColourOkLabA coeff = { amtL, amtC, amtC, 0.0f };
-    int uniqueCols[16];
+    int uniqueCols[4];
     int numUniqueCols = 0;
-    int colFreq[512];
-    for (int i = 0; i < 16; i++)
+    for (int i = 0; i < 4; i++)
     {
         uniqueCols[i] = -1;
     }
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 40; i++)
     {
         ColourOkLabA tempCol = ColourOkLabAFMA(col, accumErr, coeff);
         tempCol = ClampColourOkLab(tempCol);
         int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
-        for (int j = 0; j < 16; j++)
+        for (int j = 0; j < 4; j++)
         {
             if (uniqueCols[j] < 0)
             {
                 uniqueCols[j] = outInd;
-                colFreq[outInd] = 1;
                 numUniqueCols++;
                 break;
             }
             else if (uniqueCols[j] == outInd)
             {
-                colFreq[outInd]++;
                 break;
             }
         }
+        if (numUniqueCols >= 4) break;
         ColourOkLabA palCol = palette[outInd];
-        palCol.L = -palCol.L; palCol.a = -palCol.a; palCol.b = -palCol.b; palCol.A = -palCol.A;
-        ColourOkLabA outerr = ColourOkLabAAdd(col, palCol);
+        ColourOkLabA outerr = ColourOkLabASub(col, palCol);
         accumErr = ColourOkLabAAddAccumulate(accumErr, outerr);
     }
     SortColourIndicesByLuma(uniqueCols, numUniqueCols);
-    int curPos = 0;
-    int selInd = bayer16x16i[(y % 16) * 16 + (x % 16)];
-    for (int i = 0; i < numUniqueCols - 1; i++)
+    ColourOkLabA mixRatio; //Hey, who left a perfectly good data structure lying around?
+    switch (numUniqueCols)
     {
-        int thisCol = uniqueCols[i];
-        int curNumOccur = colFreq[thisCol];
-        curPos += curNumOccur;
-        if (selInd < curPos) return srcpalette[uniqueCols[i]];
+        case 1:
+        {
+            ColourRGBA outcol = srcpalette[uniqueCols[0]];
+            outcol.A = col.A;
+            return outcol;
+        }
+        case 2:
+            mixRatio = GetMixRatios2(col, palette[uniqueCols[0]], palette[uniqueCols[1]]);
+            break;
+        case 3:
+            mixRatio = GetMixRatios3(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]]);
+            break;
+        case 4:
+            mixRatio = GetMixRatios4(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]], palette[uniqueCols[3]]);
+            break;
     }
-    return srcpalette[uniqueCols[numUniqueCols - 1]];
+    int selInd = bayer16x16i[(y % 16) * 16 + (x % 16)];
+    float threshold = (((float)selInd) + 0.5f) * 0.00390625f;
+    ColourRGBA outcol;
+    if (threshold <= mixRatio.L) outcol = srcpalette[uniqueCols[0]];
+    else if (threshold <= mixRatio.a) outcol = srcpalette[uniqueCols[1]];
+    else if (threshold <= mixRatio.b) outcol = srcpalette[uniqueCols[2]];
+    else outcol = srcpalette[uniqueCols[3]];
+    outcol.A = col.A;
+    return outcol;
 }
 
 static ColourRGBA OrderedDitherVoid16x16(ColourOkLabA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
 {
     ColourOkLabA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
     ColourOkLabA coeff = { amtL, amtC, amtC, 0.0f };
-    int uniqueCols[16];
+    int uniqueCols[4];
     int numUniqueCols = 0;
-    int colFreq[512];
-    for (int i = 0; i < 16; i++)
+    for (int i = 0; i < 4; i++)
     {
         uniqueCols[i] = -1;
     }
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 40; i++)
     {
         ColourOkLabA tempCol = ColourOkLabAFMA(col, accumErr, coeff);
         tempCol = ClampColourOkLab(tempCol);
         int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
-        for (int j = 0; j < 16; j++)
+        for (int j = 0; j < 4; j++)
         {
             if (uniqueCols[j] < 0)
             {
                 uniqueCols[j] = outInd;
-                colFreq[outInd] = 1;
                 numUniqueCols++;
                 break;
             }
             else if (uniqueCols[j] == outInd)
             {
-                colFreq[outInd]++;
                 break;
             }
         }
+        if (numUniqueCols >= 4) break;
         ColourOkLabA palCol = palette[outInd];
-        palCol.L = -palCol.L; palCol.a = -palCol.a; palCol.b = -palCol.b; palCol.A = -palCol.A;
-        ColourOkLabA outerr = ColourOkLabAAdd(col, palCol);
+        ColourOkLabA outerr = ColourOkLabASub(col, palCol);
         accumErr = ColourOkLabAAddAccumulate(accumErr, outerr);
     }
     SortColourIndicesByLuma(uniqueCols, numUniqueCols);
-    int curPos = 0;
-    int selInd = void16x16i[(y % 16) * 16 + (x % 16)];
-    for (int i = 0; i < numUniqueCols - 1; i++)
+    ColourOkLabA mixRatio; //Hey, who left a perfectly good data structure lying around?
+    switch (numUniqueCols)
     {
-        int thisCol = uniqueCols[i];
-        int curNumOccur = colFreq[thisCol];
-        curPos += curNumOccur;
-        if (selInd < curPos) return srcpalette[uniqueCols[i]];
+        case 1:
+        {
+            ColourRGBA outcol = srcpalette[uniqueCols[0]];
+            outcol.A = col.A;
+            return outcol;
+        }
+        case 2:
+            mixRatio = GetMixRatios2(col, palette[uniqueCols[0]], palette[uniqueCols[1]]);
+            break;
+        case 3:
+            mixRatio = GetMixRatios3(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]]);
+            break;
+        case 4:
+            mixRatio = GetMixRatios4(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]], palette[uniqueCols[3]]);
+            break;
     }
-    return srcpalette[uniqueCols[numUniqueCols - 1]];
+    int selInd = void16x16i[(y % 16) * 16 + (x % 16)];
+    float threshold = (((float)selInd) + 0.5f) * 0.00390625f;
+    ColourRGBA outcol;
+    if (threshold <= mixRatio.L) outcol = srcpalette[uniqueCols[0]];
+    else if (threshold <= mixRatio.a) outcol = srcpalette[uniqueCols[1]];
+    else if (threshold <= mixRatio.b) outcol = srcpalette[uniqueCols[2]];
+    else outcol = srcpalette[uniqueCols[3]];
+    outcol.A = col.A;
+    return outcol;
 }
 
 static ColourOkLabA DitherFloydSteinberg(ColourOkLabA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro, float rngAmtL, float rngAmtC)
