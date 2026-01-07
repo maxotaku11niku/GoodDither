@@ -124,6 +124,11 @@ typedef struct
 
 typedef struct
 {
+    float x[4];
+} Vec4;
+
+typedef struct
+{
     float R;
     float G;
     float B;
@@ -138,159 +143,103 @@ typedef struct
     float A;
 } ColourOkLabA;
 
-static inline ColourOkLabA ColourOkLabAAdd(ColourOkLabA l, ColourOkLabA r)
+static inline Vec4 ColourRGBAToVec4(ColourRGBA c)
 {
-    ColourOkLabA c;
-    float ca[4];
-    float la[4] = { l.L, l.a, l.b, l.A };
-    float ra[4] = { r.L, r.a, r.b, r.A };
-    for (int i = 0; i < 4; i++)
-    {
-        ca[i] = la[i] + ra[i];
-    }
-    c.L = ca[0]; c.a = ca[1]; c.b = ca[2]; c.A = ca[3];
-    return c;
+    Vec4 out;
+    out.x[0] = c.R; out.x[1] = c.G; out.x[2] = c.B; out.x[3] = c.A;
+    return out;
 }
 
-static inline ColourOkLabA ColourOkLabAAddAccumulate(ColourOkLabA l, ColourOkLabA r)
+static inline ColourRGBA Vec4ToColourRGBA(Vec4 c)
 {
-    float la[4] = { l.L, l.a, l.b, l.A };
-    float ra[4] = { r.L, r.a, r.b, r.A };
-    for (int i = 0; i < 4; i++)
-    {
-        la[i] += ra[i];
-    }
-    l.L = la[0]; l.a = la[1]; l.b = la[2]; l.A = la[3];
-    return l;
+    ColourRGBA out;
+    out.R = c.x[0]; out.G = c.x[1]; out.B = c.x[2]; out.A = c.x[3];
+    return out;
 }
 
-static inline ColourOkLabA ColourOkLabASub(ColourOkLabA l, ColourOkLabA r)
+static inline Vec4 ColourOkLabAToVec4(ColourOkLabA c)
 {
-    ColourOkLabA c;
-    float ca[4];
-    float la[4] = { l.L, l.a, l.b, l.A };
-    float ra[4] = { r.L, r.a, r.b, r.A };
-    for (int i = 0; i < 4; i++)
-    {
-        ca[i] = la[i] - ra[i];
-    }
-    c.L = ca[0]; c.a = ca[1]; c.b = ca[2]; c.A = ca[3];
-    return c;
+    Vec4 out;
+    out.x[0] = c.L; out.x[1] = c.a; out.x[2] = c.b; out.x[3] = c.A;
+    return out;
 }
 
-static inline ColourOkLabA ColourOkLabASubAccumulate(ColourOkLabA l, ColourOkLabA r)
+static inline ColourOkLabA Vec4ToColourOkLabA(Vec4 c)
 {
-    float la[4] = { l.L, l.a, l.b, l.A };
-    float ra[4] = { r.L, r.a, r.b, r.A };
-    for (int i = 0; i < 4; i++)
-    {
-        la[i] -= ra[i];
-    }
-    l.L = la[0]; l.a = la[1]; l.b = la[2]; l.A = la[3];
-    return l;
+    ColourOkLabA out;
+    out.L = c.x[0]; out.a = c.x[1]; out.b = c.x[2]; out.A = c.x[3];
+    return out;
 }
 
-static inline ColourOkLabA ColourOkLabAMultiply(ColourOkLabA l, ColourOkLabA r)
+static inline Vec4 Vec4Add(Vec4 l, Vec4 r)
 {
-
-    ColourOkLabA c;
-    float ca[4];
-    float la[4] = { l.L, l.a, l.b, l.A };
-    float ra[4] = { r.L, r.a, r.b, r.A };
+    Vec4 out;
     for (int i = 0; i < 4; i++)
     {
-        ca[i] = la[i] * ra[i];
+        out.x[i] = l.x[i] + r.x[i];
     }
-    c.L = ca[0]; c.a = ca[1]; c.b = ca[2]; c.A = ca[3];
-    return c;
+    return out;
 }
 
-static inline ColourOkLabA ColourOkLabAMultiplyAccumulate(ColourOkLabA l, ColourOkLabA r)
+static inline Vec4 Vec4Sub(Vec4 l, Vec4 r)
 {
-    float la[4] = { l.L, l.a, l.b, l.A };
-    float ra[4] = { r.L, r.a, r.b, r.A };
+    Vec4 out;
     for (int i = 0; i < 4; i++)
     {
-        la[i] *= ra[i];
+        out.x[i] = l.x[i] - r.x[i];
     }
-    l.L = la[0]; l.a = la[1]; l.b = la[2]; l.A = la[3];
-    return l;
+    return out;
 }
 
-static inline ColourOkLabA ColourOkLabAScalarMultiply(ColourOkLabA l, float r)
+static inline Vec4 Vec4ScalarMultiply(Vec4 l, float r)
 {
-
-    ColourOkLabA c;
-    float ca[4];
-    float la[4] = { l.L, l.a, l.b, l.A };
-    float ra[4] = { r, r, r, r };
+    Vec4 out;
     for (int i = 0; i < 4; i++)
     {
-        ca[i] = la[i] * ra[i];
+        out.x[i] = l.x[i] * r;
     }
-    c.L = ca[0]; c.a = ca[1]; c.b = ca[2]; c.A = ca[3];
-    return c;
+    return out;
 }
 
-static inline ColourOkLabA ColourOkLabAScalarMultiplyAccumulate(ColourOkLabA l, float r)
+static inline Vec4 Vec4Multiply(Vec4 l, Vec4 r)
 {
-    float la[4] = { l.L, l.a, l.b, l.A };
-    float ra[4] = { r, r, r, r };
+    Vec4 out;
     for (int i = 0; i < 4; i++)
     {
-        la[i] *= ra[i];
+        out.x[i] = l.x[i] * r.x[i];
     }
-    l.L = la[0]; l.a = la[1]; l.b = la[2]; l.A = la[3];
-    return l;
+    return out;
 }
 
-static inline ColourOkLabA ColourOkLabAFMA(ColourOkLabA a, ColourOkLabA ml, ColourOkLabA mr)
+static inline Vec4 Vec4FMA(Vec4 a, Vec4 ml, Vec4 mr)
 {
-    ColourOkLabA c;
-    float ca[4];
-    float aa[4] = { a.L, a.a, a.b, a.A };
-    float mla[4] = { ml.L, ml.a, ml.b, ml.A };
-    float mra[4] = { mr.L, mr.a, mr.b, mr.A };
+    Vec4 out;
     for (int i = 0; i < 4; i++)
     {
-        ca[i] = aa[i] + (mla[i] * mra[i]);
+        out.x[i] = a.x[i] + (ml.x[i] * mr.x[i]);
     }
-    c.L = ca[0]; c.a = ca[1]; c.b = ca[2]; c.A = ca[3];
-    return c;
-}
-
-static inline ColourOkLabA ColourOkLabAFMAAccumulate(ColourOkLabA a, ColourOkLabA ml, ColourOkLabA mr)
-{
-    float aa[4] = { a.L, a.a, a.b, a.A };
-    float mla[4] = { ml.L, ml.a, ml.b, ml.A };
-    float mra[4] = { mr.L, mr.a, mr.b, mr.A };
-    for (int i = 0; i < 4; i++)
-    {
-        aa[i] += (mla[i] * mra[i]);
-    }
-    a.L = aa[0]; a.a = aa[1]; a.b = aa[2]; a.A = aa[3];
-    return a;
+    return out;
 }
 
 //Only dots the first 3 components together since alpha isn't used in colour comparisons
-static inline float ColourOkLabADotProduct(ColourOkLabA l, ColourOkLabA r)
+static inline float Vec4Dot(Vec4 l, Vec4 r)
 {
-    float la[4] = { l.L, l.a, l.b, l.A };
-    float ra[4] = { r.L, r.a, r.b, r.A };
     float out = 0.0f;
     for (int i = 0; i < 3; i++)
     {
-        out += (la[i] * ra[i]);
+        out += l.x[i] * r.x[i];
     }
     return out;
 }
 
 //Only crosses the first 3 components together because the cross product is a uniquely 3-dimensional operator
-static inline ColourOkLabA ColourOkLabACrossProduct(ColourOkLabA l, ColourOkLabA r)
+static inline Vec4 Vec4Cross(Vec4 l, Vec4 r)
 {
-    float la[4] = { l.L, l.a, l.b, l.A };
-    float ra[4] = { r.L, r.a, r.b, r.A };
-    ColourOkLabA out = { la[1] * ra[2] - la[2] * ra[1], la[2] * ra[0] - la[0] * ra[2], la[0] * ra[1] - la[1] * ra[0], l.A };
+    Vec4 out;
+    out.x[0] = l.x[1] * r.x[2] - l.x[2] * r.x[1];
+    out.x[1] = l.x[2] * r.x[0] - l.x[0] * r.x[2];
+    out.x[2] = l.x[0] * r.x[1] - l.x[1] * r.x[0];
+    out.x[3] = l.x[3];
     return out;
 }
 
@@ -608,11 +557,13 @@ ColourOkLabA* palette;
 float minL;
 float maxL;
 float maxC;
+ColourRGBA minRGBA;
+ColourRGBA maxRGBA;
 Babl* space;
 unsigned int rngNum[4];
 
-typedef ColourRGBA OrderedDitherFunction(ColourOkLabA, int, int, float, float, float, float, float);
-typedef ColourOkLabA ErrorDiffusionDitherFunction(ColourOkLabA, int, int, int, float, float, float, float, float, ColourOkLabA*, int, float, float);
+typedef ColourRGBA OrderedDitherFunction(ColourRGBA, int, int, float, float, float, float, float);
+typedef ColourRGBA ErrorDiffusionDitherFunction(ColourRGBA, int, int, int, float, float, float, float, float, ColourRGBA*, int, float, float);
 
 static inline ColourRGBA SRGBToLinear(ColourRGBA c)
 {
@@ -677,7 +628,7 @@ static ColourRGBA OkLabToSRGB(ColourOkLabA c)
     float l = OKLabtoCRLMS[0] * c.L + OKLabtoCRLMS[1] * c.a + OKLabtoCRLMS[2] * c.b;
     float m = OKLabtoCRLMS[3] * c.L + OKLabtoCRLMS[4] * c.a + OKLabtoCRLMS[5] * c.b;
     float s = OKLabtoCRLMS[6] * c.L + OKLabtoCRLMS[7] * c.a + OKLabtoCRLMS[8] * c.b;
-    l = l*l*l; m = m*m*m; s = s*s*s;
+    l *= l*l; m *= m*m; s *= s*s;
     float R = LMStoSRGB[0] * l + LMStoSRGB[1] * m + LMStoSRGB[2] * s;
     float G = LMStoSRGB[3] * l + LMStoSRGB[4] * m + LMStoSRGB[5] * s;
     float B = LMStoSRGB[6] * l + LMStoSRGB[7] * m + LMStoSRGB[8] * s;
@@ -721,32 +672,11 @@ static inline float RNGUpdateFloat()
     return 2.0f * (f - 1.5f); //Should be between -1 and ~1
 }
 
-static ColourRGBA GetClosestColourOkLab(ColourOkLabA col, float bright, float contrast, float uvbias)
+static ColourRGBA GetClosestColourOkLab(ColourRGBA col, float bright, float contrast, float uvbias)
 {
     float lowestDistance = 999999999999999999999999.9;
     int chosenColour = 0;
-    col = ColourAdjust(col, bright, contrast);
-    for (int i = 0; i < palSize; i++)
-    {
-        const ColourOkLabA incol = palette[i];
-        const float dL = (col.L - incol.L) * uvbias;
-        const float da = col.a - incol.a;
-        const float db = col.b - incol.b;
-        const float dist = (dL * dL) + (da * da) + (db * db);
-        if (dist < lowestDistance)
-        {
-            lowestDistance = dist;
-            chosenColour = i;
-        }
-    }
-    return srcpalette[chosenColour];
-}
-
-static ColourOkLabA GetClosestColourOkLabWithError(ColourOkLabA col, ColourOkLabA* error, float bright, float contrast, float uvbias, float rngAmtL, float rngAmtC)
-{
-    float lowestDistance = 999999999999999999999999.9;
-    int chosenColour = 0;
-    ColourOkLabA postcol = ColourAdjust(col, bright, contrast);
+    ColourOkLabA postcol = ColourAdjust(SRGBToOkLab(col), bright, contrast);
     for (int i = 0; i < palSize; i++)
     {
         const ColourOkLabA incol = palette[i];
@@ -760,19 +690,43 @@ static ColourOkLabA GetClosestColourOkLabWithError(ColourOkLabA col, ColourOkLab
             chosenColour = i;
         }
     }
-    ColourOkLabA outcol = palette[chosenColour];
-    error->L = col.L - outcol.L + RNGUpdateFloat()*rngAmtL;
-    error->a = col.a - outcol.a + RNGUpdateFloat()*rngAmtC;
-    error->b = col.b - outcol.b + RNGUpdateFloat()*rngAmtC;
+    return srcpalette[chosenColour];
+}
+
+static ColourRGBA GetClosestColourOkLabWithError(ColourRGBA col, ColourRGBA* error, float bright, float contrast, float uvbias, float rngAmtL, float rngAmtC)
+{
+    float lowestDistance = 999999999999999999999999.9;
+    int chosenColour = 0;
+    ColourOkLabA postcol = ColourAdjust(SRGBToOkLab(col), bright, contrast);
+    postcol.L += RNGUpdateFloat() * rngAmtL;
+    postcol.a += RNGUpdateFloat() * rngAmtC;
+    postcol.b += RNGUpdateFloat() * rngAmtC;
+    for (int i = 0; i < palSize; i++)
+    {
+        const ColourOkLabA incol = palette[i];
+        const float dL = (postcol.L - incol.L) * uvbias;
+        const float da = postcol.a - incol.a;
+        const float db = postcol.b - incol.b;
+        const float dist = (dL * dL) + (da * da) + (db * db);
+        if (dist < lowestDistance)
+        {
+            lowestDistance = dist;
+            chosenColour = i;
+        }
+    }
+    ColourRGBA outcol = srcpalette[chosenColour];
+    error->R = col.R - outcol.R;
+    error->G = col.G - outcol.G;
+    error->B = col.B - outcol.B;
     error->A = 0.0f;
     return outcol;
 }
 
-static int GetClosestColourIndexOkLab(ColourOkLabA col, float bright, float contrast, float uvbias)
+static int GetClosestColourIndexOkLab(ColourRGBA col, float bright, float contrast, float uvbias)
 {
     float lowestDistance = 999999999999999999999999.9;
     int chosenColour = 0;
-    ColourOkLabA postcol = ColourAdjust(col, bright, contrast);
+    ColourOkLabA postcol = ColourAdjust(SRGBToOkLab(col), bright, contrast);
     for (int i = 0; i < palSize; i++)
     {
         const ColourOkLabA incol = palette[i];
@@ -801,6 +755,14 @@ static ColourOkLabA ClampColourOkLab(ColourOkLabA col)
     return col;
 }
 
+static ColourRGBA ClampColourSRGB(ColourRGBA col)
+{
+    if (col.R < minRGBA.R) col.R = minRGBA.R; else if (col.R > maxRGBA.R) col.R = maxRGBA.R;
+    if (col.G < minRGBA.G) col.G = minRGBA.G; else if (col.G > maxRGBA.G) col.G = maxRGBA.G;
+    if (col.B < minRGBA.B) col.B = minRGBA.B; else if (col.B > maxRGBA.B) col.B = maxRGBA.B;
+    return col;
+}
+
 static void SortColourIndicesByLuma(int* indexArray, int len)
 {
     for (int i = 1; i < len; i++)
@@ -822,108 +784,140 @@ static void SortColourIndicesByLuma(int* indexArray, int len)
 }
 
 //This function projects the target colour along a line defined by two colour vertices
-static ColourOkLabA GetMixRatios2(ColourOkLabA target, ColourOkLabA col0, ColourOkLabA col1)
+static Vec4 GetMixRatios2(Vec4 target, Vec4 col0, Vec4 col1)
 {
-    ColourOkLabA tp = ColourOkLabASub(target, col0);
-    ColourOkLabA b0 = ColourOkLabASub(col1, col0);
-    float n2 = ColourOkLabADotProduct(b0, b0);
-    float tc = ColourOkLabADotProduct(tp, b0);
-    ColourOkLabA out = { 1.0f - (tc/n2), 1.0f, 1.0f, 1.0f };
+    Vec4 tp = Vec4Sub(target, col0);
+    Vec4 b0 = Vec4Sub(col1, col0);
+    float n2 = Vec4Dot(b0, b0);
+    float tc = Vec4Dot(tp, b0);
+    Vec4 out;
+    out.x[0] = 1.0f - (tc/n2);
+    out.x[1] = 1.0f;
+    out.x[2] = 1.0f;
+    out.x[3] = 1.0f;
     return out;
 }
 
 //This function projects the target colour on a triangle defined by three colour vertices
-static ColourOkLabA GetMixRatios3(ColourOkLabA target, ColourOkLabA col0, ColourOkLabA col1, ColourOkLabA col2)
+static Vec4 GetMixRatios3(Vec4 target, Vec4 col0, Vec4 col1, Vec4 col2)
 {
-    ColourOkLabA tp = ColourOkLabASub(target, col0);
-    ColourOkLabA b0 = ColourOkLabASub(col1, col0);
-    ColourOkLabA b1 = ColourOkLabASub(col2, col0);
-    ColourOkLabA b2 = ColourOkLabACrossProduct(b0, b1);
-    ColourOkLabA b1xb2 = ColourOkLabACrossProduct(b1, b2);
-    float det = ColourOkLabADotProduct(b0, b1xb2);
-    ColourOkLabA mat[2];
+    Vec4 tp = Vec4Sub(target, col0);
+    Vec4 b0 = Vec4Sub(col1, col0);
+    Vec4 b1 = Vec4Sub(col2, col0);
+    Vec4 b2 = Vec4Cross(b0, b1);
+    Vec4 b1xb2 = Vec4Cross(b1, b2);
+    float det = Vec4Dot(b0, b1xb2);
+    Vec4 mat[2];
     mat[0] = b1xb2;
-    mat[1] = ColourOkLabACrossProduct(b2, b0);
-    float fac1 = ColourOkLabADotProduct(mat[0], tp)/det;
-    float fac2 = ColourOkLabADotProduct(mat[1], tp)/det;
+    mat[1] = Vec4Cross(b2, b0);
+    float fac1 = Vec4Dot(mat[0], tp)/det;
+    float fac2 = Vec4Dot(mat[1], tp)/det;
     //Clamping terms reproject out-of-gamut colours on the edges of the triangle
     if (fac1 + fac2 > 1.0f)
     {
-        ColourOkLabA newRatios = GetMixRatios2(target, col1, col2);
-        ColourOkLabA realOut = { 0.0f, newRatios.L, 1.0f, 1.0f };
+        Vec4 newRatios = GetMixRatios2(target, col1, col2);
+        Vec4 realOut;
+        realOut.x[0] = 0.0f;
+        realOut.x[1] = newRatios.x[0];
+        realOut.x[2] = 1.0f;
+        realOut.x[3] = 1.0f;
         return realOut;
     }
     if (fac1 < 0.0f)
     {
-        ColourOkLabA newRatios = GetMixRatios2(target, col0, col2);
-        ColourOkLabA realOut = { newRatios.L, newRatios.L, 1.0f, 1.0f };
+        Vec4 newRatios = GetMixRatios2(target, col0, col2);
+        Vec4 realOut;
+        realOut.x[0] = newRatios.x[0];
+        realOut.x[1] = newRatios.x[0];
+        realOut.x[2] = 1.0f;
+        realOut.x[3] = 1.0f;
         return realOut;
     }
     if (fac2 < 0.0f)
     {
         return GetMixRatios2(target, col0, col1);
     }
-    ColourOkLabA out = { 1.0f - fac1 - fac2, 1.0f - fac2, 1.0f, 1.0f };
+    Vec4 out;
+    out.x[0] = 1.0f - fac1 - fac2;
+    out.x[1] = 1.0f - fac2;
+    out.x[2] = 1.0f;
+    out.x[3] = 1.0f;
     return out;
 }
 
 //This function expresses the target colour in terms of a tetrahedral space defined by four colour vertices
-static ColourOkLabA GetMixRatios4(ColourOkLabA target, ColourOkLabA col0, ColourOkLabA col1, ColourOkLabA col2, ColourOkLabA col3)
+static Vec4 GetMixRatios4(Vec4 target, Vec4 col0, Vec4 col1, Vec4 col2, Vec4 col3)
 {
-    ColourOkLabA tp = ColourOkLabASub(target, col0);
-    ColourOkLabA b0 = ColourOkLabASub(col1, col0);
-    ColourOkLabA b1 = ColourOkLabASub(col2, col0);
-    ColourOkLabA b2 = ColourOkLabASub(col3, col0);
-    ColourOkLabA b1xb2 = ColourOkLabACrossProduct(b1, b2);
-    float det = ColourOkLabADotProduct(b0, b1xb2);
-    ColourOkLabA mat[3];
+    Vec4 tp = Vec4Sub(target, col0);
+    Vec4 b0 = Vec4Sub(col1, col0);
+    Vec4 b1 = Vec4Sub(col2, col0);
+    Vec4 b2 = Vec4Sub(col3, col0);
+    Vec4 b1xb2 = Vec4Cross(b1, b2);
+    float det = Vec4Dot(b0, b1xb2);
+    Vec4 mat[3];
     mat[0] = b1xb2;
-    mat[1] = ColourOkLabACrossProduct(b2, b0);
-    mat[2] = ColourOkLabACrossProduct(b0, b1);
-    float fac1 = ColourOkLabADotProduct(mat[0], tp)/det;
-    float fac2 = ColourOkLabADotProduct(mat[1], tp)/det;
-    float fac3 = ColourOkLabADotProduct(mat[2], tp)/det;
+    mat[1] = Vec4Cross(b2, b0);
+    mat[2] = Vec4Cross(b0, b1);
+    float fac1 = Vec4Dot(mat[0], tp)/det;
+    float fac2 = Vec4Dot(mat[1], tp)/det;
+    float fac3 = Vec4Dot(mat[2], tp)/det;
     //Clamping terms reproject out-of-gamut colours on the faces of the tetrahedron
     if (fac1 + fac2 + fac3 > 1.0f)
     {
-        ColourOkLabA newRatios = GetMixRatios3(target, col1, col2, col3);
-        ColourOkLabA realOut = { 0.0f, newRatios.L, newRatios.a, 1.0f };
+        Vec4 newRatios = GetMixRatios3(target, col1, col2, col3);
+        Vec4 realOut;
+        realOut.x[0] = 0.0f;
+        realOut.x[1] = newRatios.x[0];
+        realOut.x[2] = newRatios.x[1];
+        realOut.x[3] = 1.0f;
         return realOut;
     }
     if (fac1 < 0.0f)
     {
-        ColourOkLabA newRatios = GetMixRatios3(target, col0, col2, col3);
-        ColourOkLabA realOut = { newRatios.L, newRatios.L, newRatios.a, 1.0f };
+        Vec4 newRatios = GetMixRatios3(target, col0, col2, col3);
+        Vec4 realOut;
+        realOut.x[0] = newRatios.x[0];
+        realOut.x[1] = newRatios.x[0];
+        realOut.x[2] = newRatios.x[1];
+        realOut.x[3] = 1.0f;
         return realOut;
     }
     if (fac2 < 0.0f)
     {
-        ColourOkLabA newRatios = GetMixRatios3(target, col0, col1, col3);
-        ColourOkLabA realOut = { newRatios.L, newRatios.a, newRatios.a, 1.0f };
+        Vec4 newRatios = GetMixRatios3(target, col0, col1, col3);
+        Vec4 realOut;
+        realOut.x[0] = newRatios.x[0];
+        realOut.x[1] = newRatios.x[1];
+        realOut.x[2] = newRatios.x[1];
+        realOut.x[3] = 1.0f;
         return realOut;
     }
     if (fac3 < 0.0f)
     {
         return GetMixRatios3(target, col0, col1, col2);
     }
-    ColourOkLabA out = { 1.0f - fac1 - fac2 - fac3, 1.0f - fac2 - fac3, 1.0f - fac3, 1.0f };
+    Vec4 out;
+    out.x[0] = 1.0f - fac1 - fac2 - fac3;
+    out.x[1] = 1.0f - fac2 - fac3;
+    out.x[2] = 1.0f - fac3;
+    out.x[3] = 1.0f;
     return out;
 }
 
-static ColourRGBA OrderedDitherBayer2x2(ColourOkLabA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
+static ColourRGBA OrderedDitherBayer2x2(ColourRGBA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
 {
-    ColourOkLabA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
-    ColourOkLabA coeff = { amtL, amtC, amtC, 0.0f };
+    ColourRGBA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
+    ColourRGBA coeff = { amtL, amtL, amtL, 0.0f };
     int colourList[4];
     for (int i = 0; i < 4; i++)
     {
-        ColourOkLabA tempCol = ColourOkLabAFMA(col, accumErr, coeff);
-        tempCol = ClampColourOkLab(tempCol);
+        ColourRGBA tempCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(col), ColourRGBAToVec4(accumErr), ColourRGBAToVec4(coeff)));
+        tempCol = ClampColourSRGB(tempCol);
         int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
         colourList[i] = outInd;
-        ColourOkLabA palCol = palette[outInd];
-        ColourOkLabA outerr = ColourOkLabASub(col, palCol);
-        accumErr = ColourOkLabAAddAccumulate(accumErr, outerr);
+        ColourRGBA palCol = srcpalette[outInd];
+        ColourRGBA outerr = Vec4ToColourRGBA(Vec4Sub(ColourRGBAToVec4(col), ColourRGBAToVec4(palCol)));
+        accumErr = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(accumErr), ColourRGBAToVec4(outerr)));
     }
     SortColourIndicesByLuma(colourList, 4);
     ColourRGBA outcol = srcpalette[colourList[bayer2x2i[(y % 2) * 2 + (x % 2)]]];
@@ -931,20 +925,20 @@ static ColourRGBA OrderedDitherBayer2x2(ColourOkLabA col, int x, int y, float am
     return outcol;
 }
 
-static ColourRGBA OrderedDitherBayer4x4(ColourOkLabA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
+static ColourRGBA OrderedDitherBayer4x4(ColourRGBA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
 {
-    ColourOkLabA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
-    ColourOkLabA coeff = { amtL, amtC, amtC, 0.0f };
+    ColourRGBA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
+    ColourRGBA coeff = { amtL, amtL, amtL, 0.0f };
     int colourList[16];
     for (int i = 0; i < 16; i++)
     {
-        ColourOkLabA tempCol = ColourOkLabAFMA(col, accumErr, coeff);
-        tempCol = ClampColourOkLab(tempCol);
+        ColourRGBA tempCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(col), ColourRGBAToVec4(accumErr), ColourRGBAToVec4(coeff)));
+        tempCol = ClampColourSRGB(tempCol);
         int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
         colourList[i] = outInd;
-        ColourOkLabA palCol = palette[outInd];
-        ColourOkLabA outerr = ColourOkLabASub(col, palCol);
-        accumErr = ColourOkLabAAddAccumulate(accumErr, outerr);
+        ColourRGBA palCol = srcpalette[outInd];
+        ColourRGBA outerr = Vec4ToColourRGBA(Vec4Sub(ColourRGBAToVec4(col), ColourRGBAToVec4(palCol)));
+        accumErr = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(accumErr), ColourRGBAToVec4(outerr)));
     }
     SortColourIndicesByLuma(colourList, 16);
     ColourRGBA outcol = srcpalette[colourList[bayer4x4i[(y % 4) * 4 + (x % 4)]]];
@@ -952,10 +946,10 @@ static ColourRGBA OrderedDitherBayer4x4(ColourOkLabA col, int x, int y, float am
     return outcol;
 }
 
-static ColourRGBA OrderedDitherBayer8x8(ColourOkLabA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
+static ColourRGBA OrderedDitherBayer8x8(ColourRGBA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
 {
-    ColourOkLabA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
-    ColourOkLabA coeff = { amtL, amtC, amtC, 0.0f };
+    ColourRGBA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
+    ColourRGBA coeff = { amtL, amtL, amtL, 0.0f };
     int uniqueCols[4];
     int numUniqueCols = 0;
     for (int i = 0; i < 4; i++)
@@ -964,8 +958,8 @@ static ColourRGBA OrderedDitherBayer8x8(ColourOkLabA col, int x, int y, float am
     }
     for (int i = 0; i < 24; i++)
     {
-        ColourOkLabA tempCol = ColourOkLabAFMA(col, accumErr, coeff);
-        tempCol = ClampColourOkLab(tempCol);
+        ColourRGBA tempCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(col), ColourRGBAToVec4(accumErr), ColourRGBAToVec4(coeff)));
+        tempCol = ClampColourSRGB(tempCol);
         int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
         for (int j = 0; j < 4; j++)
         {
@@ -981,12 +975,12 @@ static ColourRGBA OrderedDitherBayer8x8(ColourOkLabA col, int x, int y, float am
             }
         }
         if (numUniqueCols >= 4) break;
-        ColourOkLabA palCol = palette[outInd];
-        ColourOkLabA outerr = ColourOkLabASub(col, palCol);
-        accumErr = ColourOkLabAAddAccumulate(accumErr, outerr);
+        ColourRGBA palCol = srcpalette[outInd];
+        ColourRGBA outerr = Vec4ToColourRGBA(Vec4Sub(ColourRGBAToVec4(col), ColourRGBAToVec4(palCol)));
+        accumErr = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(accumErr), ColourRGBAToVec4(outerr)));
     }
     SortColourIndicesByLuma(uniqueCols, numUniqueCols);
-    ColourOkLabA mixRatio; //Hey, who left a perfectly good data structure lying around?
+    Vec4 mixRatio;
     switch (numUniqueCols)
     {
         case 1:
@@ -996,30 +990,30 @@ static ColourRGBA OrderedDitherBayer8x8(ColourOkLabA col, int x, int y, float am
             return outcol;
         }
         case 2:
-            mixRatio = GetMixRatios2(col, palette[uniqueCols[0]], palette[uniqueCols[1]]);
+            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]));
             break;
         case 3:
-            mixRatio = GetMixRatios3(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]]);
+            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]));
             break;
         case 4:
-            mixRatio = GetMixRatios4(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]], palette[uniqueCols[3]]);
+            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]), ColourRGBAToVec4(srcpalette[uniqueCols[3]]));
             break;
     }
     int selInd = bayer8x8i[(y % 8) * 8 + (x % 8)];
     float threshold = (((float)selInd) + 0.5f) * 0.015625f;
     ColourRGBA outcol;
-    if (threshold <= mixRatio.L) outcol = srcpalette[uniqueCols[0]];
-    else if (threshold <= mixRatio.a) outcol = srcpalette[uniqueCols[1]];
-    else if (threshold <= mixRatio.b) outcol = srcpalette[uniqueCols[2]];
+    if (threshold <= mixRatio.x[0]) outcol = srcpalette[uniqueCols[0]];
+    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[uniqueCols[1]];
+    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[uniqueCols[2]];
     else outcol = srcpalette[uniqueCols[3]];
     outcol.A = col.A;
     return outcol;
 }
 
-static ColourRGBA OrderedDitherBayer16x16(ColourOkLabA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
+static ColourRGBA OrderedDitherBayer16x16(ColourRGBA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
 {
-    ColourOkLabA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
-    ColourOkLabA coeff = { amtL, amtC, amtC, 0.0f };
+    ColourRGBA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
+    ColourRGBA coeff = { amtL, amtL, amtL, 0.0f };
     int uniqueCols[4];
     int numUniqueCols = 0;
     for (int i = 0; i < 4; i++)
@@ -1028,8 +1022,8 @@ static ColourRGBA OrderedDitherBayer16x16(ColourOkLabA col, int x, int y, float 
     }
     for (int i = 0; i < 40; i++)
     {
-        ColourOkLabA tempCol = ColourOkLabAFMA(col, accumErr, coeff);
-        tempCol = ClampColourOkLab(tempCol);
+        ColourRGBA tempCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(col), ColourRGBAToVec4(accumErr), ColourRGBAToVec4(coeff)));
+        tempCol = ClampColourSRGB(tempCol);
         int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
         for (int j = 0; j < 4; j++)
         {
@@ -1045,12 +1039,12 @@ static ColourRGBA OrderedDitherBayer16x16(ColourOkLabA col, int x, int y, float 
             }
         }
         if (numUniqueCols >= 4) break;
-        ColourOkLabA palCol = palette[outInd];
-        ColourOkLabA outerr = ColourOkLabASub(col, palCol);
-        accumErr = ColourOkLabAAddAccumulate(accumErr, outerr);
+        ColourRGBA palCol = srcpalette[outInd];
+        ColourRGBA outerr = Vec4ToColourRGBA(Vec4Sub(ColourRGBAToVec4(col), ColourRGBAToVec4(palCol)));
+        accumErr = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(accumErr), ColourRGBAToVec4(outerr)));
     }
     SortColourIndicesByLuma(uniqueCols, numUniqueCols);
-    ColourOkLabA mixRatio; //Hey, who left a perfectly good data structure lying around?
+    Vec4 mixRatio;
     switch (numUniqueCols)
     {
         case 1:
@@ -1060,30 +1054,30 @@ static ColourRGBA OrderedDitherBayer16x16(ColourOkLabA col, int x, int y, float 
             return outcol;
         }
         case 2:
-            mixRatio = GetMixRatios2(col, palette[uniqueCols[0]], palette[uniqueCols[1]]);
+            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]));
             break;
         case 3:
-            mixRatio = GetMixRatios3(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]]);
+            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]));
             break;
         case 4:
-            mixRatio = GetMixRatios4(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]], palette[uniqueCols[3]]);
+            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]), ColourRGBAToVec4(srcpalette[uniqueCols[3]]));
             break;
     }
     int selInd = bayer16x16i[(y % 16) * 16 + (x % 16)];
     float threshold = (((float)selInd) + 0.5f) * 0.00390625f;
     ColourRGBA outcol;
-    if (threshold <= mixRatio.L) outcol = srcpalette[uniqueCols[0]];
-    else if (threshold <= mixRatio.a) outcol = srcpalette[uniqueCols[1]];
-    else if (threshold <= mixRatio.b) outcol = srcpalette[uniqueCols[2]];
+    if (threshold <= mixRatio.x[0]) outcol = srcpalette[uniqueCols[0]];
+    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[uniqueCols[1]];
+    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[uniqueCols[2]];
     else outcol = srcpalette[uniqueCols[3]];
     outcol.A = col.A;
     return outcol;
 }
 
-static ColourRGBA OrderedDitherVoid16x16(ColourOkLabA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
+static ColourRGBA OrderedDitherVoid16x16(ColourRGBA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
 {
-    ColourOkLabA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
-    ColourOkLabA coeff = { amtL, amtC, amtC, 0.0f };
+    ColourRGBA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
+    ColourRGBA coeff = { amtL, amtL, amtL, 0.0f };
     int uniqueCols[4];
     int numUniqueCols = 0;
     for (int i = 0; i < 4; i++)
@@ -1092,8 +1086,8 @@ static ColourRGBA OrderedDitherVoid16x16(ColourOkLabA col, int x, int y, float a
     }
     for (int i = 0; i < 40; i++)
     {
-        ColourOkLabA tempCol = ColourOkLabAFMA(col, accumErr, coeff);
-        tempCol = ClampColourOkLab(tempCol);
+        ColourRGBA tempCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(col), ColourRGBAToVec4(accumErr), ColourRGBAToVec4(coeff)));
+        tempCol = ClampColourSRGB(tempCol);
         int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
         for (int j = 0; j < 4; j++)
         {
@@ -1109,12 +1103,12 @@ static ColourRGBA OrderedDitherVoid16x16(ColourOkLabA col, int x, int y, float a
             }
         }
         if (numUniqueCols >= 4) break;
-        ColourOkLabA palCol = palette[outInd];
-        ColourOkLabA outerr = ColourOkLabASub(col, palCol);
-        accumErr = ColourOkLabAAddAccumulate(accumErr, outerr);
+        ColourRGBA palCol = srcpalette[outInd];
+        ColourRGBA outerr = Vec4ToColourRGBA(Vec4Sub(ColourRGBAToVec4(col), ColourRGBAToVec4(palCol)));
+        accumErr = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(accumErr), ColourRGBAToVec4(outerr)));
     }
     SortColourIndicesByLuma(uniqueCols, numUniqueCols);
-    ColourOkLabA mixRatio; //Hey, who left a perfectly good data structure lying around?
+    Vec4 mixRatio;
     switch (numUniqueCols)
     {
         case 1:
@@ -1124,338 +1118,338 @@ static ColourRGBA OrderedDitherVoid16x16(ColourOkLabA col, int x, int y, float a
             return outcol;
         }
         case 2:
-            mixRatio = GetMixRatios2(col, palette[uniqueCols[0]], palette[uniqueCols[1]]);
+            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]));
             break;
         case 3:
-            mixRatio = GetMixRatios3(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]]);
+            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]));
             break;
         case 4:
-            mixRatio = GetMixRatios4(col, palette[uniqueCols[0]], palette[uniqueCols[1]], palette[uniqueCols[2]], palette[uniqueCols[3]]);
+            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]), ColourRGBAToVec4(srcpalette[uniqueCols[3]]));
             break;
     }
     int selInd = void16x16i[(y % 16) * 16 + (x % 16)];
     float threshold = (((float)selInd) + 0.5f) * 0.00390625f;
     ColourRGBA outcol;
-    if (threshold <= mixRatio.L) outcol = srcpalette[uniqueCols[0]];
-    else if (threshold <= mixRatio.a) outcol = srcpalette[uniqueCols[1]];
-    else if (threshold <= mixRatio.b) outcol = srcpalette[uniqueCols[2]];
+    if (threshold <= mixRatio.x[0]) outcol = srcpalette[uniqueCols[0]];
+    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[uniqueCols[1]];
+    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[uniqueCols[2]];
     else outcol = srcpalette[uniqueCols[3]];
     outcol.A = col.A;
     return outcol;
 }
 
-static ColourOkLabA DitherFloydSteinberg(ColourOkLabA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro, float rngAmtL, float rngAmtC)
+static ColourRGBA DitherFloydSteinberg(ColourRGBA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourRGBA* diffErr, int boustro, float rngAmtL, float rngAmtC)
 {
-    ColourOkLabA outerr;
-    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    ColourRGBA outerr;
+    ColourRGBA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
-    col = ColourOkLabAAddAccumulate(col, *diffCol);
-    col = ClampColourOkLab(col);
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
+    col = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(col), ColourRGBAToVec4(*diffCol)));
+    col = ClampColourSRGB(col);
+    ColourRGBA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
     diffCol = &diffErr[(x + boustro) +  y * w];
-    const ColourOkLabA coeff1 = { 0.4375f * amtL,  0.4375f * amtC, 0.4375f * amtC, 1.0f };
-    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff1);
+    const ColourRGBA coeff1 = { 0.4375f * amtL,  0.4375f * amtL, 0.4375f * amtL, 1.0f };
+    *diffCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(*diffCol), ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff1)));
     diffCol = &diffErr[(x - boustro) + (y + 1) * w];
-    const ColourOkLabA coeff2 = { 0.1875f * amtL,  0.1875f * amtC, 0.1875f * amtC, 1.0f };
-    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff2);
+    const ColourRGBA coeff2 = { 0.1875f * amtL,  0.1875f * amtL, 0.1875f * amtL, 1.0f };
+    *diffCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(*diffCol), ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff2)));
     diffCol = &diffErr[ x            + (y + 1) * w];
-    const ColourOkLabA coeff3 = { 0.3125f * amtL,  0.3125f * amtC, 0.3125f * amtC, 1.0f };
-    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff3);
+    const ColourRGBA coeff3 = { 0.3125f * amtL,  0.3125f * amtL, 0.3125f * amtL, 1.0f };
+    *diffCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(*diffCol), ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff3)));
     diffCol = &diffErr[(x + boustro) + (y + 1) * w];
-    const ColourOkLabA coeff4 = { 0.0625f * amtL,  0.0625f * amtC, 0.0625f * amtC, 1.0f };
-    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff4);
+    const ColourRGBA coeff4 = { 0.0625f * amtL,  0.0625f * amtL, 0.0625f * amtL, 1.0f };
+    *diffCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(*diffCol), ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff4)));
 
     outcol.A = inalpha;
     return outcol;
 }
 
-static ColourOkLabA DitherFloydFalse(ColourOkLabA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro, float rngAmtL, float rngAmtC)
+static ColourRGBA DitherFloydFalse(ColourRGBA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourRGBA* diffErr, int boustro, float rngAmtL, float rngAmtC)
 {
-    ColourOkLabA outerr;
-    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    ColourRGBA outerr;
+    ColourRGBA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
-    col = ColourOkLabAAddAccumulate(col, *diffCol);
-    col = ClampColourOkLab(col);
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
+    col = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(col), ColourRGBAToVec4(*diffCol)));
+    col = ClampColourSRGB(col);
+    ColourRGBA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    const ColourOkLabA coeff1 = { 0.375f * amtL, 0.375f * amtC, 0.375f * amtC, 1.0f };
-    const ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff1);
+    const ColourRGBA coeff1 = { 0.375f * amtL, 0.375f * amtL, 0.375f * amtL, 1.0f };
+    const Vec4 errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff1));
     diffCol = &diffErr[(x + boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x            + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
-    const ColourOkLabA coeff2 = { 0.25f * amtL, 0.25f * amtC, 0.25f * amtC, 1.0f };
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
+    const ColourRGBA coeff2 = { 0.25f * amtL, 0.25f * amtL, 0.25f * amtL, 1.0f };
     diffCol = &diffErr[(x + boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff2);
+    *diffCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(*diffCol), ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff2)));
 
     outcol.A = inalpha;
     return outcol;
 }
 
-static ColourOkLabA DitherJJN(ColourOkLabA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro, float rngAmtL, float rngAmtC)
+static ColourRGBA DitherJJN(ColourRGBA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourRGBA* diffErr, int boustro, float rngAmtL, float rngAmtC)
 {
-    ColourOkLabA outerr;
-    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    ColourRGBA outerr;
+    ColourRGBA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
-    col = ColourOkLabAAddAccumulate(col, *diffCol);
-    col = ClampColourOkLab(col);
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
+    col = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(col), ColourRGBAToVec4(*diffCol)));
+    col = ClampColourSRGB(col);
+    ColourRGBA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    const ColourOkLabA coeff1 = { (7.0f/48.0f) * amtL, (7.0f/48.0f) * amtC, (7.0f/48.0f) * amtC, 1.0f };
-    ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff1);
+    const ColourRGBA coeff1 = { (7.0f/48.0f) * amtL, (7.0f/48.0f) * amtL, (7.0f/48.0f) * amtL, 1.0f };
+    Vec4 errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff1));
     diffCol = &diffErr[(x + boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x            + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff2 = { (5.0f/48.0f) * amtL, (5.0f/48.0f) * amtC, (5.0f/48.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff2);
+    const ColourRGBA coeff2 = { (5.0f/48.0f) * amtL, (5.0f/48.0f) * amtL, (5.0f/48.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff2));
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x                + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff3 = { (3.0f/48.0f) * amtL, (3.0f/48.0f) * amtC, (3.0f/48.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff3);
+    const ColourRGBA coeff3 = { (3.0f/48.0f) * amtL, (3.0f/48.0f) * amtL, (3.0f/48.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff3));
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff4 = { (1.0f/48.0f) * amtL, (1.0f/48.0f) * amtC, (1.0f/48.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff4);
+    const ColourRGBA coeff4 = { (1.0f/48.0f) * amtL, (1.0f/48.0f) * amtL, (1.0f/48.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff4));
     diffCol = &diffErr[(x + 2 * boustro) + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - 2 * boustro) + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
     outcol.A = inalpha;
     return outcol;
 }
 
-static ColourOkLabA DitherStucki(ColourOkLabA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro, float rngAmtL, float rngAmtC)
+static ColourRGBA DitherStucki(ColourRGBA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourRGBA* diffErr, int boustro, float rngAmtL, float rngAmtC)
 {
-    ColourOkLabA outerr;
-    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    ColourRGBA outerr;
+    ColourRGBA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
-    col = ColourOkLabAAddAccumulate(col, *diffCol);
-    col = ClampColourOkLab(col);
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
+    col = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(col), ColourRGBAToVec4(*diffCol)));
+    col = ClampColourSRGB(col);
+    ColourRGBA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    const ColourOkLabA coeff1 = { (8.0f/42.0f) * amtL, (8.0f/42.0f) * amtC, (8.0f/42.0f) * amtC, 1.0f };
-    ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff1);
+    const ColourRGBA coeff1 = { (8.0f/42.0f) * amtL, (8.0f/42.0f) * amtL, (8.0f/42.0f) * amtL, 1.0f };
+    Vec4 errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff1));
     diffCol = &diffErr[(x + boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x            + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff2 = { (4.0f/42.0f) * amtL, (4.0f/42.0f) * amtC, (4.0f/42.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff2);
+    const ColourRGBA coeff2 = { (4.0f/42.0f) * amtL, (4.0f/42.0f) * amtL, (4.0f/42.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff2));
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x                + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff3 = { (2.0f/42.0f) * amtL, (2.0f/42.0f) * amtC, (2.0f/42.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff3);
+    const ColourRGBA coeff3 = { (2.0f/42.0f) * amtL, (2.0f/42.0f) * amtL, (2.0f/42.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff3));
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff4 = { (1.0f/42.0f) * amtL, (1.0f/42.0f) * amtC, (1.0f/42.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff4);
+    const ColourRGBA coeff4 = { (1.0f/42.0f) * amtL, (1.0f/42.0f) * amtL, (1.0f/42.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff4));
     diffCol = &diffErr[(x + 2 * boustro) + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - 2 * boustro) + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
     outcol.A = inalpha;
     return outcol;
 }
 
-static ColourOkLabA DitherBurkes(ColourOkLabA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro, float rngAmtL, float rngAmtC)
+static ColourRGBA DitherBurkes(ColourRGBA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourRGBA* diffErr, int boustro, float rngAmtL, float rngAmtC)
 {
-    ColourOkLabA outerr;
-    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    ColourRGBA outerr;
+    ColourRGBA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
-    col = ColourOkLabAAddAccumulate(col, *diffCol);
-    col = ClampColourOkLab(col);
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
+    col = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(col), ColourRGBAToVec4(*diffCol)));
+    col = ClampColourSRGB(col);
+    ColourRGBA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    const ColourOkLabA coeff1 = { (8.0f/32.0f) * amtL, (8.0f/32.0f) * amtC, (8.0f/32.0f) * amtC, 1.0f };
-    ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff1);
+    const ColourRGBA coeff1 = { (8.0f/32.0f) * amtL, (8.0f/32.0f) * amtL, (8.0f/32.0f) * amtL, 1.0f };
+    Vec4 errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff1));
     diffCol = &diffErr[(x + boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x            + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff2 = { (4.0f/32.0f) * amtL, (4.0f/32.0f) * amtC, (4.0f/32.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff2);
+    const ColourRGBA coeff2 = { (4.0f/32.0f) * amtL, (4.0f/32.0f) * amtL, (4.0f/32.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff2));
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff3 = { (2.0f/32.0f) * amtL, (2.0f/32.0f) * amtC, (2.0f/32.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff3);
+    const ColourRGBA coeff3 = { (2.0f/32.0f) * amtL, (2.0f/32.0f) * amtL, (2.0f/32.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff3));
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
     outcol.A = inalpha;
     return outcol;
 }
 
-static ColourOkLabA DitherSierra(ColourOkLabA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro, float rngAmtL, float rngAmtC)
+static ColourRGBA DitherSierra(ColourRGBA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourRGBA* diffErr, int boustro, float rngAmtL, float rngAmtC)
 {
-    ColourOkLabA outerr;
-    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    ColourRGBA outerr;
+    ColourRGBA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
-    col = ColourOkLabAAddAccumulate(col, *diffCol);
-    col = ClampColourOkLab(col);
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
+    col = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(col), ColourRGBAToVec4(*diffCol)));
+    col = ClampColourSRGB(col);
+    ColourRGBA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    const ColourOkLabA coeff1 = { (5.0f/32.0f) * amtL, (5.0f/32.0f) * amtC, (5.0f/32.0f) * amtC, 1.0f };
-    ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff1);
+    const ColourRGBA coeff1 = { (5.0f/32.0f) * amtL, (5.0f/32.0f) * amtL, (5.0f/32.0f) * amtL, 1.0f };
+    Vec4 errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff1));
     diffCol = &diffErr[(x + boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x            + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff2 = { (4.0f/32.0f) * amtL, (4.0f/32.0f) * amtC, (4.0f/32.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff2);
+    const ColourRGBA coeff2 = { (4.0f/32.0f) * amtL, (4.0f/32.0f) * amtL, (4.0f/32.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff2));
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff3 = { (3.0f/32.0f) * amtL, (3.0f/32.0f) * amtC, (3.0f/32.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff3);
+    const ColourRGBA coeff3 = { (3.0f/32.0f) * amtL, (3.0f/32.0f) * amtL, (3.0f/32.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff3));
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x                + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff4 = { (2.0f/32.0f) * amtL, (2.0f/32.0f) * amtC, (2.0f/32.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff4);
+    const ColourRGBA coeff4 = { (2.0f/32.0f) * amtL, (2.0f/32.0f) * amtL, (2.0f/32.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff4));
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x + boustro)     + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - boustro)     + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
     outcol.A = inalpha;
     return outcol;
 }
 
-static ColourOkLabA DitherSierra2Row(ColourOkLabA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro, float rngAmtL, float rngAmtC)
+static ColourRGBA DitherSierra2Row(ColourRGBA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourRGBA* diffErr, int boustro, float rngAmtL, float rngAmtC)
 {
-    ColourOkLabA outerr;
-    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    ColourRGBA outerr;
+    ColourRGBA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
-    col = ColourOkLabAAddAccumulate(col, *diffCol);
-    col = ClampColourOkLab(col);
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
+    col = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(col), ColourRGBAToVec4(*diffCol)));
+    col = ClampColourSRGB(col);
+    ColourRGBA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    const ColourOkLabA coeff1 = { (4.0f/16.0f) * amtL, (4.0f/16.0f) * amtC, (4.0f/16.0f) * amtC, 1.0f };
+    const ColourRGBA coeff1 = { (4.0f/16.0f) * amtL, (4.0f/16.0f) * amtL, (4.0f/16.0f) * amtL, 1.0f };
     diffCol = &diffErr[(x + boustro) +  y * w];
-    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff1);
+    *diffCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(*diffCol), ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff1)));
 
-    const ColourOkLabA coeff2 = { (3.0f/16.0f) * amtL, (3.0f/16.0f) * amtC, (3.0f/16.0f) * amtC, 1.0f };
-    ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff2);
+    const ColourRGBA coeff2 = { (3.0f/16.0f) * amtL, (3.0f/16.0f) * amtL, (3.0f/16.0f) * amtL, 1.0f };
+    Vec4 errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff2));
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x                + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff3 = { (2.0f/16.0f) * amtL, (2.0f/16.0f) * amtC, (2.0f/16.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff3);
+    const ColourRGBA coeff3 = { (2.0f/16.0f) * amtL, (2.0f/16.0f) * amtL, (2.0f/16.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff3));
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
-    const ColourOkLabA coeff4 = { (1.0f/16.0f) * amtL, (1.0f/16.0f) * amtC, (1.0f/16.0f) * amtC, 1.0f };
-    errc = ColourOkLabAMultiply(outerr, coeff4);
+    const ColourRGBA coeff4 = { (1.0f/16.0f) * amtL, (1.0f/16.0f) * amtL, (1.0f/16.0f) * amtL, 1.0f };
+    errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff4));
     diffCol = &diffErr[(x + 2 * boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - 2 * boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
     outcol.A = inalpha;
     return outcol;
 }
 
-static ColourOkLabA DitherFilterLite(ColourOkLabA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro, float rngAmtL, float rngAmtC)
+static ColourRGBA DitherFilterLite(ColourRGBA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourRGBA* diffErr, int boustro, float rngAmtL, float rngAmtC)
 {
-    ColourOkLabA outerr;
-    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    ColourRGBA outerr;
+    ColourRGBA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
-    col = ColourOkLabAAddAccumulate(col, *diffCol);
-    col = ClampColourOkLab(col);
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
+    col = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(col), ColourRGBAToVec4(*diffCol)));
+    col = ClampColourSRGB(col);
+    ColourRGBA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    const ColourOkLabA coeff1 = { 0.5f * amtL, 0.5f * amtC, 0.5f * amtC, 1.0f };
+    const ColourRGBA coeff1 = { 0.5f * amtL, 0.5f * amtL, 0.5f * amtL, 1.0f };
     diffCol = &diffErr[(x + boustro) +  y * w];
-    *diffCol = ColourOkLabAFMAAccumulate(*diffCol, outerr, coeff1);
-    const ColourOkLabA coeff2 = { 0.25f * amtL, 0.25f * amtC, 0.25f * amtC, 1.0f };
-    const ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff2);
+    *diffCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(*diffCol), ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff1)));
+    const ColourRGBA coeff2 = { 0.25f * amtL, 0.25f * amtL, 0.25f * amtL, 1.0f };
+    const Vec4 errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff2));
     diffCol = &diffErr[ x            + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - boustro) + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
     outcol.A = inalpha;
     return outcol;
 }
 
-static ColourOkLabA DitherAtkinson(ColourOkLabA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourOkLabA* diffErr, int boustro, float rngAmtL, float rngAmtC)
+static ColourRGBA DitherAtkinson(ColourRGBA col, int x, int y, int w, float amtL, float amtC, float bright, float contrast, float uvbias, ColourRGBA* diffErr, int boustro, float rngAmtL, float rngAmtC)
 {
-    ColourOkLabA outerr;
-    ColourOkLabA* diffCol = &diffErr[x +  y * w];
+    ColourRGBA outerr;
+    ColourRGBA* diffCol = &diffErr[x +  y * w];
     float inalpha = col.A;
-    col = ColourOkLabAAddAccumulate(col, *diffCol);
-    col = ClampColourOkLab(col);
-    ColourOkLabA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
+    col = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(col), ColourRGBAToVec4(*diffCol)));
+    col = ClampColourSRGB(col);
+    ColourRGBA outcol = GetClosestColourOkLabWithError(col, &outerr, bright, contrast, uvbias, rngAmtL, rngAmtC);
 
-    const ColourOkLabA coeff = { amtL/6.0f, amtC/6.0f, amtC/6.0f, 1.0f }; //Note: the canonical Atkinson dither only diffuses 3/4 of the error, but we'll normalise this one anyway
-    const ColourOkLabA errc = ColourOkLabAMultiply(outerr, coeff);
+    const ColourRGBA coeff = { amtL/6.0f, amtL/6.0f, amtL/6.0f, 1.0f }; //Note: the canonical Atkinson dither only diffuses 3/4 of the error, but we'll normalise this one anyway
+    const Vec4 errc = Vec4Multiply(ColourRGBAToVec4(outerr), ColourRGBAToVec4(coeff));
     diffCol = &diffErr[(x + boustro)     +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x + 2 * boustro) +  y * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x - boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x                + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[(x + boustro)     + (y + 1) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
     diffCol = &diffErr[ x                + (y + 2) * w];
-    *diffCol = ColourOkLabAAddAccumulate(*diffCol, errc);
+    *diffCol = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(*diffCol), errc));
 
     outcol.A = inalpha;
     return outcol;
@@ -1555,7 +1549,6 @@ static void GetBestPalette(ColourRGBA8* pal, int numColours, ColourRGBA* pixels,
     int newWidth = w / xSubsampleFactor;
     int newHeight = h / ySubsampleFactor;
     float mF = (float)(1.0 / (double)(xSubsampleFactor * ySubsampleFactor));
-    ColourOkLabA multFac = { mF, mF, mF, mF };
     long long numPixels = newWidth * newHeight;
     ColourOkLabA* colours = malloc(numPixels * sizeof(ColourOkLabA));
     for (int i = 0; i < newHeight; i++)
@@ -1570,10 +1563,10 @@ static void GetBestPalette(ColourRGBA8* pal, int numColours, ColourRGBA* pixels,
                 for (int u = 0; u < xSubsampleFactor; u++)
                 {
                     ColourOkLabA sampCol = sampRect[u + v * w];
-                    sumC = ColourOkLabAAddAccumulate(sumC, sampCol);
+                    sumC = Vec4ToColourOkLabA(Vec4Add(ColourOkLabAToVec4(sumC), ColourOkLabAToVec4(sampCol)));
                 }
             }
-            colours[j + i * newWidth] = ColourOkLabAMultiply(sumC, multFac);
+            colours[j + i * newWidth] = Vec4ToColourOkLabA(Vec4ScalarMultiply(ColourOkLabAToVec4(sumC), mF));
         }
     }
     free(fullColours);
@@ -2029,9 +2022,15 @@ static void prepare(GeglOperation* operation)
     palette = malloc(palSize * sizeof(ColourOkLabA));
     minL = 1.0f; maxL = 0.0f;
     maxC = 0.0f;
+    minRGBA.R = 1.0f; minRGBA.G = 1.0f; minRGBA.B = 1.0f; minRGBA.A = 0.0f;
+    maxRGBA.R = 0.0f; maxRGBA.G = 0.0f; maxRGBA.B = 0.0f; maxRGBA.A = 1.0f;
     for (int i = 0; i < palSize; i++)
     {
-        srcpalette[i] = SRGB8ToLinearFloat(selpalette[i]);
+        ColourRGBA lincol = SRGB8ToLinearFloat(selpalette[i]);
+        srcpalette[i] = lincol;
+        if (lincol.R < minRGBA.R) minRGBA.R = lincol.R; if (lincol.R > maxRGBA.R) maxRGBA.R = lincol.R;
+        if (lincol.G < minRGBA.G) minRGBA.G = lincol.G; if (lincol.G > maxRGBA.G) maxRGBA.G = lincol.G;
+        if (lincol.B < minRGBA.B) minRGBA.B = lincol.B; if (lincol.B > maxRGBA.B) maxRGBA.B = lincol.B;
         ColourOkLabA labcol = SRGBToOkLab(srcpalette[i]);
         palette[i] = labcol;
         if (labcol.L < minL) minL = labcol.L; if (labcol.L > maxL) maxL = labcol.L;
@@ -2048,7 +2047,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
     GeglProperties* props = GEGL_PROPERTIES(op);
     if (!hasFoundBestColours) //hacky
     {
-        if (!hasStartedToFindBestColours) //First thread spanwed by GEGL gets to coordinate the others
+        if (!hasStartedToFindBestColours) //First thread spawned by GEGL gets to coordinate the others
         {
             hasStartedToFindBestColours = 1; //for god's sake please get here really really fast before some other stupid chunk starts processing
             GeglRectangle totalRect = gegl_operation_get_bounding_box(op);
@@ -2062,7 +2061,11 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             maxC = 0.0f;
             for (int i = 0; i < palSize; i++)
             {
-                srcpalette[i] = SRGB8ToLinearFloat(selpalette[i]);
+                ColourRGBA lincol = SRGB8ToLinearFloat(selpalette[i]);
+                srcpalette[i] = lincol;
+                if (lincol.R < minRGBA.R) minRGBA.R = lincol.R; if (lincol.R > maxRGBA.R) maxRGBA.R = lincol.R;
+                if (lincol.G < minRGBA.G) minRGBA.G = lincol.G; if (lincol.G > maxRGBA.G) maxRGBA.G = lincol.G;
+                if (lincol.B < minRGBA.B) minRGBA.B = lincol.B; if (lincol.B > maxRGBA.B) maxRGBA.B = lincol.B;
                 ColourOkLabA labcol = SRGBToOkLab(srcpalette[i]);
                 palette[i] = labcol;
                 if (labcol.L < minL) minL = labcol.L; if (labcol.L > maxL) maxL = labcol.L;
@@ -2112,7 +2115,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
     //Allocate buffers
     ColourRGBA* pixel = malloc(w * h * sizeof(ColourRGBA));
     ColourRGBA* expandedInput;
-    ColourOkLabA* diffusedError;
+    ColourRGBA* diffusedError;
     OrderedDitherFunction* odfunc;
     ErrorDiffusionDitherFunction* eddfunc;
     int eddMarginX, eddMarginY;
@@ -2180,8 +2183,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             for (glong j = 0; j < w; j++)
             {
                 const glong index = i * w + j;
-                ColourOkLabA incol = SRGBToOkLab(pixel[index]);
-                pixel[index] = odfunc(incol, j + x, i + y, ditAmtEL, ditAmtEC, postB, postC, cbias);
+                pixel[index] = odfunc(pixel[index], j + x, i + y, ditAmtEL, ditAmtEC, postB, postC, cbias);
             }
         }
     }
@@ -2192,7 +2194,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
         expandedInput = malloc(w * h * sizeof(ColourRGBA));
         gegl_rectangle_set(&newRoi, x, y, w, h);
         gegl_buffer_get(inBuf, &newRoi, 1.0, fmt, expandedInput, GEGL_AUTO_ROWSTRIDE, GEGL_ABYSS_CLAMP);
-        diffusedError = calloc(w * h, sizeof(ColourOkLabA));
+        diffusedError = calloc(w * h, sizeof(ColourRGBA));
         isErrorDiffusion = 1;
         for (glong i = 0; i < h-eddMarginY; i++)
         {
@@ -2202,8 +2204,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
                 for (glong j = w-1-eddMarginX; j >= eddMarginX; j--)
                 {
                     const glong index = i * w + j;
-                    ColourOkLabA incol = SRGBToOkLab(expandedInput[index]);
-                    expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtEL, ditAmtEC, postB, postC, cbias, diffusedError, -1, rngAmtL, rngAmtC));
+                    expandedInput[index] = eddfunc(expandedInput[index], j, i, w, ditAmtEL, ditAmtEC, postB, postC, cbias, diffusedError, -1, rngAmtL, rngAmtC);
                 }
             }
             else
@@ -2211,8 +2212,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
                 for (glong j = eddMarginX; j < w-eddMarginX; j++)
                 {
                     const glong index = i * w + j;
-                    ColourOkLabA incol = SRGBToOkLab(expandedInput[index]);
-                    expandedInput[index] = OkLabToSRGB(eddfunc(incol, j, i, w, ditAmtEL, ditAmtEC, postB, postC, cbias, diffusedError, 1, rngAmtL, rngAmtC));
+                    expandedInput[index] = eddfunc(expandedInput[index], j, i, w, ditAmtEL, ditAmtEC, postB, postC, cbias, diffusedError, 1, rngAmtL, rngAmtC);
                 }
             }
         }
