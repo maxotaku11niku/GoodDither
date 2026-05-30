@@ -129,6 +129,22 @@ typedef struct
 
 typedef struct
 {
+    int v[4];
+} Tetrahedron;
+
+struct BSPNode;
+typedef struct
+{
+    union { int p0; float q0; };
+    union { int p1; float q1; };
+    union { int p2; float q2; };
+    union { int p3; float q3; };
+    struct BSPNode* l;
+    struct BSPNode* r;
+} BSPNode;
+
+typedef struct
+{
     float R;
     float G;
     float B;
@@ -554,6 +570,9 @@ int palSize;
 ColourRGBA8* selpalette;
 ColourRGBA* srcpalette;
 ColourOkLabA* palette;
+ColourRGBA8 selpaletteMem[512];
+ColourRGBA srcpaletteMem[512];
+ColourOkLabA paletteMem[512];
 float minL;
 float maxL;
 float maxC;
@@ -561,8 +580,12 @@ ColourRGBA minRGBA;
 ColourRGBA maxRGBA;
 Babl* space;
 unsigned int rngNum[4];
+Tetrahedron tetrahedra[16384];
+int numTets;
+BSPNode bspStruct[524288];
+ColourRGBA centralColour;
 
-typedef ColourRGBA OrderedDitherFunction(ColourRGBA, int, int, float, float, float, float, float);
+typedef ColourRGBA OrderedDitherFunction(ColourRGBA, int, int);
 typedef ColourRGBA ErrorDiffusionDitherFunction(ColourRGBA, int, int, int, float, float, float, float, float, ColourRGBA*, int, float, float);
 
 static inline ColourRGBA SRGBToLinear(ColourRGBA c)
@@ -904,236 +927,928 @@ static Vec4 GetMixRatios4(Vec4 target, Vec4 col0, Vec4 col1, Vec4 col2, Vec4 col
     return out;
 }
 
-static ColourRGBA OrderedDitherBayer2x2(ColourRGBA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
+static Vec4 GetPointInTetrahedron(Tetrahedron tet, Vec4* points, Vec4* superTetrahedron, int n)
 {
-    ColourRGBA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
-    ColourRGBA coeff = { amtL, amtL, amtL, 0.0f };
-    int colourList[4];
-    for (int i = 0; i < 4; i++)
-    {
-        ColourRGBA tempCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(col), ColourRGBAToVec4(accumErr), ColourRGBAToVec4(coeff)));
-        tempCol = ClampColourSRGB(tempCol);
-        int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
-        colourList[i] = outInd;
-        ColourRGBA palCol = srcpalette[outInd];
-        ColourRGBA outerr = Vec4ToColourRGBA(Vec4Sub(ColourRGBAToVec4(col), ColourRGBAToVec4(palCol)));
-        accumErr = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(accumErr), ColourRGBAToVec4(outerr)));
-    }
-    SortColourIndicesByLuma(colourList, 4);
-    ColourRGBA outcol = srcpalette[colourList[bayer2x2i[(y % 2) * 2 + (x % 2)]]];
-    outcol.A = col.A;
-    return outcol;
+    int pointInd = tet.v[n];
+    if (superTetrahedron && pointInd < 0) return superTetrahedron[-1 - pointInd];
+    else return points[pointInd];
 }
 
-static ColourRGBA OrderedDitherBayer4x4(ColourRGBA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
+static float TripleProduct(Vec4 tetPoint0, Vec4 tetPoint1, Vec4 tetPoint2, Vec4 tetPoint3)
 {
-    ColourRGBA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
-    ColourRGBA coeff = { amtL, amtL, amtL, 0.0f };
-    int colourList[16];
-    for (int i = 0; i < 16; i++)
-    {
-        ColourRGBA tempCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(col), ColourRGBAToVec4(accumErr), ColourRGBAToVec4(coeff)));
-        tempCol = ClampColourSRGB(tempCol);
-        int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
-        colourList[i] = outInd;
-        ColourRGBA palCol = srcpalette[outInd];
-        ColourRGBA outerr = Vec4ToColourRGBA(Vec4Sub(ColourRGBAToVec4(col), ColourRGBAToVec4(palCol)));
-        accumErr = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(accumErr), ColourRGBAToVec4(outerr)));
-    }
-    SortColourIndicesByLuma(colourList, 16);
-    ColourRGBA outcol = srcpalette[colourList[bayer4x4i[(y % 4) * 4 + (x % 4)]]];
-    outcol.A = col.A;
-    return outcol;
+    Vec4 tetPoint1C = Vec4Sub(tetPoint1, tetPoint0);
+    Vec4 tetPoint2C = Vec4Sub(tetPoint2, tetPoint0);
+    Vec4 tetPoint3C = Vec4Sub(tetPoint3, tetPoint0);
+
+    float cxdymdxcyC = tetPoint2C.x[0] * tetPoint3C.x[1] - tetPoint3C.x[0] * tetPoint2C.x[1];
+    float cxdzmdxczC = tetPoint2C.x[0] * tetPoint3C.x[2] - tetPoint3C.x[0] * tetPoint2C.x[2];
+    float cydzmdyczC = tetPoint2C.x[1] * tetPoint3C.x[2] - tetPoint3C.x[1] * tetPoint2C.x[2];
+
+    return tetPoint1C.x[0] * cydzmdyczC - tetPoint1C.x[1] * cxdzmdxczC + tetPoint1C.x[2] * cxdymdxcyC;
 }
 
-static ColourRGBA OrderedDitherBayer8x8(ColourRGBA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
+static int PointIsInCircumsphere(Vec4 point, Vec4 tetPoint0, Vec4 tetPoint1, Vec4 tetPoint2, Vec4 tetPoint3)
 {
-    ColourRGBA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
-    ColourRGBA coeff = { amtL, amtL, amtL, 0.0f };
-    int uniqueCols[4];
+    //Rebased points
+    Vec4 tetPoint0T = Vec4Sub(tetPoint0, point);
+    Vec4 tetPoint1T = Vec4Sub(tetPoint1, point);
+    Vec4 tetPoint2T = Vec4Sub(tetPoint2, point);
+    Vec4 tetPoint3T = Vec4Sub(tetPoint3, point);
+    Vec4 tetPoint1C = Vec4Sub(tetPoint1, tetPoint0);
+    Vec4 tetPoint2C = Vec4Sub(tetPoint2, tetPoint0);
+    Vec4 tetPoint3C = Vec4Sub(tetPoint3, tetPoint0);
+
+    //Norms squared
+    double tetPoint0TLSq = Vec4Dot(tetPoint0T, tetPoint0T);
+    double tetPoint1TLSq = Vec4Dot(tetPoint1T, tetPoint1T);
+    double tetPoint2TLSq = Vec4Dot(tetPoint2T, tetPoint2T);
+    double tetPoint3TLSq = Vec4Dot(tetPoint3T, tetPoint3T);
+
+    //Determinant components
+    double cxdymdxcy = (double)tetPoint2T.x[0] * (double)tetPoint3T.x[1] - (double)tetPoint3T.x[0] * (double)tetPoint2T.x[1];
+    double cxdzmdxcz = (double)tetPoint2T.x[0] * (double)tetPoint3T.x[2] - (double)tetPoint3T.x[0] * (double)tetPoint2T.x[2];
+    double cxdsmdxcs = (double)tetPoint2T.x[0] * tetPoint3TLSq           - (double)tetPoint3T.x[0] * tetPoint2TLSq;
+    double cydzmdycz = (double)tetPoint2T.x[1] * (double)tetPoint3T.x[2] - (double)tetPoint3T.x[1] * (double)tetPoint2T.x[2];
+    double cydsmdycs = (double)tetPoint2T.x[1] * tetPoint3TLSq           - (double)tetPoint3T.x[1] * tetPoint2TLSq;
+    double czdsmdzcs = (double)tetPoint2T.x[2] * tetPoint3TLSq           - (double)tetPoint3T.x[2] * tetPoint2TLSq;
+
+    double axbymbxay = (double)tetPoint0T.x[0] * (double)tetPoint1T.x[1] - (double)tetPoint1T.x[0] * (double)tetPoint0T.x[1];
+    double azbxmbzax = (double)tetPoint0T.x[2] * (double)tetPoint1T.x[0] - (double)tetPoint1T.x[2] * (double)tetPoint0T.x[0];
+    double axbsmbxas = (double)tetPoint0T.x[0] * tetPoint1TLSq           - (double)tetPoint1T.x[0] * tetPoint0TLSq;
+    double aybzmbyaz = (double)tetPoint0T.x[1] * (double)tetPoint1T.x[2] - (double)tetPoint1T.x[1] * (double)tetPoint0T.x[2];
+    double asbymbsay = tetPoint0TLSq           * (double)tetPoint1T.x[1] - tetPoint1TLSq           * (double)tetPoint0T.x[1];
+    double azbsmbzas = (double)tetPoint0T.x[2] * tetPoint1TLSq           - (double)tetPoint1T.x[2] * tetPoint0TLSq;
+
+    double det = axbymbxay * czdsmdzcs + azbxmbzax * cydsmdycs + axbsmbxas * cydzmdycz + aybzmbyaz * cxdsmdxcs + asbymbsay * cxdzmdxcz + azbsmbzas * cxdymdxcy;
+
+    //Triple product to find orientation
+    double cxdymdxcyC = (double)tetPoint2C.x[0] * (double)tetPoint3C.x[1] - (double)tetPoint3C.x[0] * (double)tetPoint2C.x[1];
+    double cxdzmdxczC = (double)tetPoint2C.x[0] * (double)tetPoint3C.x[2] - (double)tetPoint3C.x[0] * (double)tetPoint2C.x[2];
+    double cydzmdyczC = (double)tetPoint2C.x[1] * (double)tetPoint3C.x[2] - (double)tetPoint3C.x[1] * (double)tetPoint2C.x[2];
+
+    double tProd = (double)tetPoint1C.x[0] * cydzmdyczC - (double)tetPoint1C.x[1] * cxdzmdxczC + (double)tetPoint1C.x[2] * cxdymdxcyC;
+    double dist = det * tProd;
+
+    if (dist <= 1e-18)
+    {
+        if (dist >= -1e-18) return 1;
+        else return 2;
+    }
+    else return 0;
+}
+
+static Vec4 GeneratePlaneEquation(Vec4 point0, Vec4 point1, Vec4 point2)
+{
+    double line0[4];
+    line0[0] = (double)point1.x[0] - (double)point0.x[0];
+    line0[1] = (double)point1.x[1] - (double)point0.x[1];
+    line0[2] = (double)point1.x[2] - (double)point0.x[2];
+    line0[3] = (double)point1.x[3] - (double)point0.x[3];
+    double line1[4];
+    line1[0] = (double)point2.x[0] - (double)point0.x[0];
+    line1[1] = (double)point2.x[1] - (double)point0.x[1];
+    line1[2] = (double)point2.x[2] - (double)point0.x[2];
+    line1[3] = (double)point2.x[3] - (double)point0.x[3];
+    double normal[4];
+    normal[0] = line0[1] * line1[2] - line0[2] * line1[1];
+    normal[1] = line0[2] * line1[0] - line0[0] * line1[2];
+    normal[2] = line0[0] * line1[1] - line0[1] * line1[0];
+    normal[3] = normal[0] * (double)point0.x[0] + normal[1] * (double)point0.x[1] + normal[2] * (double)point0.x[2];
+    Vec4 out = { (float)normal[0], (float)normal[1], (float)normal[2], (float)normal[3] };
+    return out;
+}
+
+static int FacesAreSame(Tetrahedron faceL, Tetrahedron faceR)
+{
+    int Lind0 = faceL.v[0];
+    int i;
+    for (i = 0; i < 3; i++)
+    {
+        if (Lind0 == faceR.v[i]) break;
+    }
+    if (i >= 3) return 0;
+    int Lind1 = faceL.v[1];
+    int j;
+    for (j = 0; j < 3; j++)
+    {
+        if (i == j) continue;
+        else if (Lind1 == faceR.v[j]) break;
+    }
+    if (j >= 3) return 0;
+    int k;
+    switch (i)
+    {
+        case 0:
+            k = (j == 1) ? 2 : 1;
+            break;
+        case 1:
+            k = (j == 0) ? 2 : 0;
+            break;
+        case 2:
+            k = (j == 0) ? 1 : 0;
+            break;
+    }
+    return faceL.v[2] == faceR.v[k];
+}
+
+static Tetrahedron TraverseBSPTree(BSPNode* bsp, Vec4 point)
+{
+    if (bsp->l == NULL)
+    {
+        Tetrahedron out = { bsp->p0, bsp->p1, bsp->p2, bsp->p3 };
+        return out;
+    }
+    else
+    {
+        Vec4 norm = { bsp->q0, bsp->q1, bsp->q2, bsp->q3 };
+        float res = Vec4Dot(norm, point);
+        if ((res + 1e-8f) >= norm.x[3])
+        {
+            return TraverseBSPTree((BSPNode*)bsp->l, point);
+        }
+        else
+        {
+            return TraverseBSPTree((BSPNode*)bsp->r, point);
+        }
+    }
+}
+
+static Tetrahedron* TetrahedrisePoints(Vec4* points, int nPoints, int* nTets)
+{
+    Tetrahedron* tetList = malloc(nPoints * 32 * sizeof(Tetrahedron));
+    Tetrahedron* polyhedraHole = malloc(nPoints * 4 * sizeof(Tetrahedron));
+    int* badTets = malloc(nPoints * 32 * sizeof(int));
+    int* badFaces = malloc(nPoints * 4 * sizeof(int));
+    Vec4* modPoints = malloc(nPoints * sizeof(Vec4));
+    Tetrahedron superTet = { -1, -2, -3, -4 };
+    tetList[0] = superTet;
+    int nTet = 1;
+    int maxNTet = 1;
+    int maxHoleSize = 0;
+    Vec4 superTetPoints[4];
+    Vec4 min = {  99.9f,  99.9f,  99.9f,  99.9f };
+    Vec4 max = { -99.9f, -99.9f, -99.9f, -99.9f };
+    //Do a small coordinate transform to break symmetries
+    for (int i = 0; i < nPoints; i++)
+    {
+        Vec4 inPoint = points[i];
+        Vec4 outPoint;
+        float addAmt = (inPoint.x[1] + inPoint.x[2]) * 0.0001f;
+        outPoint.x[0] = inPoint.x[0] + addAmt;
+        outPoint.x[1] = inPoint.x[1] + addAmt;
+        outPoint.x[2] = inPoint.x[2] + addAmt;
+        outPoint.x[3] = inPoint.x[3];
+        modPoints[i] = outPoint;
+    }
+    //Find the surrounding tetrahedron
+    for (int i = 0; i < nPoints; i++)
+    {
+        Vec4 testPoint = points[i];
+        for (int j = 0; j < 4; j++)
+        {
+            if (testPoint.x[j] < min.x[j]) min.x[j] = testPoint.x[j];
+            else if (testPoint.x[j] > max.x[j]) max.x[j] = testPoint.x[j];
+        }
+    }
+    Vec4 delta = Vec4ScalarMultiply(Vec4Sub(max, min), 16.0f);
+    Vec4 center = Vec4ScalarMultiply(Vec4Add(min, max), 0.5f);
+    Vec4 cmind = Vec4Sub(center, delta);
+    Vec4 cplud = Vec4Add(center, delta);
+    superTetPoints[0].x[0] = center.x[0];
+    superTetPoints[0].x[1] = center.x[1];
+    superTetPoints[0].x[2] = cplud.x[2];
+    superTetPoints[1].x[0] = center.x[0];
+    superTetPoints[1].x[1] = cplud.x[1];
+    superTetPoints[1].x[2] = cmind.x[2];
+    superTetPoints[2].x[0] = cplud.x[0];
+    superTetPoints[2].x[1] = cmind.x[1];
+    superTetPoints[2].x[2] = cmind.x[2];
+    superTetPoints[3].x[0] = cmind.x[0];
+    superTetPoints[3].x[1] = cmind.x[1];
+    superTetPoints[3].x[2] = cmind.x[2];
+    for (int i = 0; i < nPoints; i++)
+    {
+        Vec4 testPoint = modPoints[i];
+        memset(badTets, 0, nTet * sizeof(int));
+        //Find all invalidated tetrahedra
+        for (int j = 0; j < nTet; j++)
+        {
+            Tetrahedron testTet = tetList[j];
+            int csppos = PointIsInCircumsphere(testPoint, GetPointInTetrahedron(testTet, modPoints, superTetPoints, 0), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 1), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 2), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 3));
+            if (csppos >= 2)
+            {
+                badTets[j] = 1;
+            }
+        }
+        //Find polyhedral hole
+        int numFaces = 0;
+        int insertPos = 0;
+        for (int j = 0; j < nTet; j++)
+        {
+            if (badTets[j])
+            {
+                Tetrahedron testTet = tetList[j];
+                Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], 0};
+                Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], 0};
+                Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], 0};
+                Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], 0};
+                Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+                for (int n = 0; n < 4; n++)
+                {
+                    int faceMask = 1;
+                    Tetrahedron thisFace = testFaces[n];
+                    for (int k = 0; k < numFaces; k++)
+                    {
+                        if (!badFaces[k] && FacesAreSame(thisFace, polyhedraHole[k]))
+                        {
+                            if (k >= numFaces - 1)
+                            {
+                                numFaces--;
+                                if (k < insertPos) insertPos = k;
+                            }
+                            else
+                            {
+                                badFaces[k] = 1;
+                                if (k < insertPos) insertPos = k;
+                            }
+                            faceMask = 0;
+                            break;
+                        }
+                    }
+                    if (faceMask)
+                    {
+                        polyhedraHole[insertPos] = thisFace;
+                        badFaces[insertPos] = 0;
+                        if (insertPos >= numFaces)
+                        {
+                            numFaces++;
+                            insertPos = numFaces;
+                            if (insertPos > maxHoleSize) maxHoleSize = insertPos;
+                        }
+                        else
+                        {
+                            int newInsertPos = numFaces;
+                            for (int k = insertPos + 1; k < numFaces; k++)
+                            {
+                                if (badFaces[k])
+                                {
+                                    newInsertPos = k;
+                                    break;
+                                }
+                            }
+                            insertPos = newInsertPos;
+                        }
+                    }
+                }
+            }
+        }
+        //Remove invalidated tetrahedra
+        int newNTets = 0;
+        for (int j = 0; j < nTet; j++)
+        {
+            while (badTets[j])
+            {
+                j++;
+                if (j >= nTet) break;
+            }
+            if (j >= nTet) break;
+            Tetrahedron inTet = tetList[j];
+            float tProd = TripleProduct(GetPointInTetrahedron(inTet, points, superTetPoints, 0), GetPointInTetrahedron(inTet, points, superTetPoints, 1), GetPointInTetrahedron(inTet, points, superTetPoints, 2), GetPointInTetrahedron(inTet, points, superTetPoints, 3));
+            tProd = fabsf(tProd);
+            if (tProd < 1e-8f) continue; //Reject degenerate tetrahedra
+            tetList[newNTets] = inTet;
+            newNTets++;
+        }
+        nTet = newNTets;
+        //Re-tetrahedrise in hole
+        for (int j = 0; j < numFaces; j++)
+        {
+            if (!badFaces[j])
+            {
+                Tetrahedron newTet = polyhedraHole[j];
+                newTet.v[3] = i;
+                float tProd = TripleProduct(GetPointInTetrahedron(newTet, points, superTetPoints, 0), GetPointInTetrahedron(newTet, points, superTetPoints, 1), GetPointInTetrahedron(newTet, points, superTetPoints, 2), GetPointInTetrahedron(newTet, points, superTetPoints, 3));
+                tProd = fabsf(tProd);
+                if (tProd < 1e-8f) continue; //Reject degenerate tetrahedra
+                tetList[nTet] = newTet;
+                nTet++;
+            }
+        }
+        if (nTet > maxNTet) maxNTet = nTet;
+        if (numFaces > maxHoleSize) maxHoleSize = numFaces;
+    }
+    free(polyhedraHole);
+    free(badFaces);
+    free(badTets);
+    int trueNTets = 0;
+    for (int i = 0; i < nTet; i++)
+    {
+        Tetrahedron inTet = tetList[i];
+        if (inTet.v[0] < 0) continue;
+        if (inTet.v[1] < 0) continue;
+        if (inTet.v[2] < 0) continue;
+        if (inTet.v[3] < 0) continue; //Sever all connections to the super tetrahedron
+        float tProd = TripleProduct(GetPointInTetrahedron(inTet, points, NULL, 0), GetPointInTetrahedron(inTet, points, NULL, 1), GetPointInTetrahedron(inTet, points, NULL, 2), GetPointInTetrahedron(inTet, points, NULL, 3));
+        tProd = fabsf(tProd);
+        if (tProd < 1e-8f) continue; //Reject degenerate tetrahedra
+        tetList[trueNTets] = inTet;
+        trueNTets++;
+    }
+    Tetrahedron* outTets = tetrahedra;
+    memcpy(outTets, tetList, trueNTets * sizeof(Tetrahedron));
+    free(tetList);
+    free(modPoints);
+    *nTets = trueNTets;
+    return outTets;
+}
+
+static BSPNode* CreateBSPTreeFromTetrahedrons(Vec4* points, int nPoints, Tetrahedron* tets, int nTets, Vec4* centerPoint)
+{
+    //Determine some geometric centers
+    Vec4 totalCenter = points[0];
+    for (int i = 1; i < nPoints; i++)
+    {
+        totalCenter = Vec4Add(totalCenter, points[i]);
+    }
+    totalCenter = Vec4ScalarMultiply(totalCenter, 1.0f/((float)nPoints));
+    *centerPoint = totalCenter;
+    Vec4* tetCenters = malloc(nTets * sizeof(Vec4));
+    for (int i = 0; i < nTets; i++)
+    {
+        Tetrahedron inTet = tets[i];
+        Vec4 a = Vec4Add(GetPointInTetrahedron(inTet, points, NULL, 0), GetPointInTetrahedron(inTet, points, NULL, 1));
+        Vec4 b = Vec4Add(GetPointInTetrahedron(inTet, points, NULL, 2), GetPointInTetrahedron(inTet, points, NULL, 3));
+        Vec4 c = Vec4Add(a, b);
+        tetCenters[i] = Vec4ScalarMultiply(c, 0.25f);
+    }
+
+    //Generate a list of tetrahedrons to handle any areas outside the given tetrahedron mesh
+    Tetrahedron* outTets = malloc(nTets * 4 * sizeof(Tetrahedron));
+    int* badFaces = malloc(nTets * 4 * sizeof(int));
+    int nOutTets = 0;
+    int insertPos = 0;
+    for (int i = 0; i < nTets; i++)
+    {
+        Tetrahedron testTet = tets[i];
+        Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
+        Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
+        Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
+        Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
+        Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+        for (int n = 0; n < 4; n++)
+        {
+            int faceMask = 1;
+            Tetrahedron thisFace = testFaces[n];
+            for (int k = 0; k < nOutTets; k++)
+            {
+                if (!badFaces[k] && FacesAreSame(thisFace, outTets[k]))
+                {
+                    if (k >= nOutTets - 1)
+                    {
+                        nOutTets--;
+                        if (k < insertPos) insertPos = k;
+                    }
+                    else
+                    {
+                        badFaces[k] = 1;
+                        if (k < insertPos) insertPos = k;
+                    }
+                    faceMask = 0;
+                    break;
+                }
+            }
+            if (faceMask)
+            {
+                outTets[insertPos] = thisFace;
+                badFaces[insertPos] = 0;
+                if (insertPos >= nOutTets)
+                {
+                    nOutTets++;
+                    insertPos = nOutTets;
+                }
+                else
+                {
+                    int newInsertPos = nOutTets;
+                    for (int k = insertPos + 1; k < nOutTets; k++)
+                    {
+                        if (badFaces[k])
+                        {
+                            newInsertPos = k;
+                            break;
+                        }
+                    }
+                    insertPos = newInsertPos;
+                }
+            }
+        }
+    }
+    int newOutTets = 0;
+    for (int i = 0; i < nOutTets; i++)
+    {
+        while (badFaces[i])
+        {
+            i++;
+            if (i >= nOutTets) break;
+        }
+        if (i >= nOutTets) break;
+        outTets[newOutTets] = outTets[i];
+        newOutTets++;
+    }
+    nOutTets = newOutTets;
+    free(badFaces);
+
+    //Generate adjacency list for the given tetrahedra
+    Tetrahedron* tetAdj = malloc(nTets * sizeof(Tetrahedron));
+    Tetrahedron* outTetAdj = malloc(nOutTets * sizeof(Tetrahedron)); //We can start filling in a bit of this to save some time
+    for (int i = 0; i < nTets; i++)
+    {
+        Tetrahedron testTet = tets[i];
+        Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
+        Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
+        Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
+        Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
+        Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+        Tetrahedron* thisAdj = tetAdj + i;
+        for (int j = 0; j < 4; j++)
+        {
+            Tetrahedron thisFace = testFaces[j];
+            int hasFound = 0;
+            for (int k = 0; k < nTets; k++)
+            {
+                if (i == k) continue;
+                Tetrahedron compTet = tets[k];
+                Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], compTet.v[2], -1};
+                Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
+                Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
+                Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
+                if (FacesAreSame(thisFace, cFace0) || FacesAreSame(thisFace, cFace1) || FacesAreSame(thisFace, cFace2) || FacesAreSame(thisFace, cFace3))
+                {
+                    thisAdj->v[j] = k;
+                    hasFound = 1;
+                    break;
+                }
+            }
+            if (!hasFound)
+            {
+                for (int k = 0; k < nOutTets; k++)
+                {
+                    Tetrahedron compFace = outTets[k];
+                    if (FacesAreSame(thisFace, compFace))
+                    {
+                        thisAdj->v[j] = -1 - k;
+                        outTetAdj[k].v[0] = i;
+                        hasFound = 1;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    //Generate adjacency list for the outside tetrahedra
+    for (int i = 0; i < nOutTets; i++)
+    {
+        Tetrahedron testTet = outTets[i];
+        Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
+        Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
+        Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
+        Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
+        Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+        Tetrahedron* thisAdj = outTetAdj + i;
+        for (int j = 1; j < 4; j++)
+        {
+            Tetrahedron thisFace = testFaces[j];
+            for (int k = 0; k < nOutTets; k++)
+            {
+                if (i == k) continue;
+                Tetrahedron compTet = outTets[k];
+                Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
+                Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
+                Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
+                if (FacesAreSame(thisFace, cFace1) || FacesAreSame(thisFace, cFace2) || FacesAreSame(thisFace, cFace3))
+                {
+                    thisAdj->v[j] = -1 - k;
+                    break;
+                }
+            }
+        }
+    }
+
+    //Generate the leaves of the BSP tree
+    BSPNode* bspTree = bspStruct;
+    BSPNode* tetLeavesRoot = bspTree + 1; //The root of the whole tree is where traversal starts, so leave that slot free
+    BSPNode* outTetLeavesRoot = tetLeavesRoot + 13 * nTets;
+    BSPNode* bspTreeConstructRoot = outTetLeavesRoot + 13 * nOutTets;
+    //Generate leaf nodes
+    for (int i = 0; i < nTets; i++)
+    {
+        Tetrahedron testTet = tets[i];
+        Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
+        Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
+        Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
+        Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
+        Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+        Vec4 faceEquations[4];
+        Vec4 thisCenter = tetCenters[i];
+        for (int j = 0; j < 4; j++)
+        {
+            Tetrahedron thisFace = testFaces[j];
+            Vec4 facePoint0 = GetPointInTetrahedron(thisFace, points, NULL, 0);
+            Vec4 facePoint1 = GetPointInTetrahedron(thisFace, points, NULL, 1);
+            Vec4 facePoint2 = GetPointInTetrahedron(thisFace, points, NULL, 2);
+            Vec4 normal = GeneratePlaneEquation(facePoint0, facePoint1, facePoint2);
+            //Normalisation to ensure the plane inequality must be ax + by + cz >= d for the point to be in the tetrahedron
+            float centerDot = Vec4Dot(normal, thisCenter);
+            if (centerDot < normal.x[3])
+            {
+                normal = Vec4ScalarMultiply(normal, -1.0f);
+            }
+            faceEquations[j] = normal;
+        }
+        BSPNode* thisTetLeafRoot = tetLeavesRoot + 13 * i;
+        for (int j = 0; j < 4; j++) //By entry face
+        {
+            BSPNode* thisFaceLeafRoot = thisTetLeafRoot + 3 * j;
+            for (int k = 0; k < 4; k++) //By comparison face
+            {
+                if (j == k) continue;
+                Vec4 thisEq = faceEquations[k];
+                thisFaceLeafRoot->q0 = thisEq.x[0];
+                thisFaceLeafRoot->q1 = thisEq.x[1];
+                thisFaceLeafRoot->q2 = thisEq.x[2];
+                thisFaceLeafRoot->q3 = thisEq.x[3];
+                Tetrahedron thisFace = testFaces[k];
+                if (k >= 3 || (j >= 3 && k >= 2)) thisFaceLeafRoot->l = (struct BSPNode*)(thisTetLeafRoot + 12);
+                else thisFaceLeafRoot->l = (struct BSPNode*)(thisFaceLeafRoot + 1);
+                int adjTetInd = tetAdj[i].v[k];
+                if (adjTetInd < 0)
+                {
+                    thisFaceLeafRoot->r = (struct BSPNode*)(outTetLeavesRoot + 13 * (-1 - adjTetInd));
+                }
+                else
+                {
+                    Tetrahedron compTet = tets[adjTetInd];
+                    Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], compTet.v[2], -1};
+                    Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
+                    Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
+                    Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
+                    int faceInd = 0;
+                    if (FacesAreSame(thisFace, cFace0)) faceInd = 0;
+                    else if (FacesAreSame(thisFace, cFace1)) faceInd = 1;
+                    else if (FacesAreSame(thisFace, cFace2)) faceInd = 2;
+                    else if (FacesAreSame(thisFace, cFace3)) faceInd = 3;
+                    thisFaceLeafRoot->r = (struct BSPNode*)(tetLeavesRoot + 13 * adjTetInd + 3 * faceInd);
+                }
+                thisFaceLeafRoot++;
+            }
+        }
+        int outCols[4];
+        outCols[0] = testTet.v[0]; outCols[1] = testTet.v[1]; outCols[2] = testTet.v[2]; outCols[3] = testTet.v[3];
+        SortColourIndicesByLuma(outCols, 4);
+        thisTetLeafRoot += 12;
+        thisTetLeafRoot->p0 = outCols[0];
+        thisTetLeafRoot->p1 = outCols[1];
+        thisTetLeafRoot->p2 = outCols[2];
+        thisTetLeafRoot->p3 = outCols[3];
+        thisTetLeafRoot->l = NULL;
+        thisTetLeafRoot->r = NULL;
+    }
+    for (int i = 0; i < nOutTets; i++)
+    {
+        Tetrahedron testTet = outTets[i];
+        Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
+        Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
+        Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
+        Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
+        Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+        Vec4 faceEquations[4];
+        for (int j = 0; j < 4; j++)
+        {
+            Tetrahedron thisFace = testFaces[j];
+            Vec4 facePoint0 = GetPointInTetrahedron(thisFace, points, &totalCenter, 0);
+            Vec4 facePoint1 = GetPointInTetrahedron(thisFace, points, &totalCenter, 1);
+            Vec4 facePoint2 = GetPointInTetrahedron(thisFace, points, &totalCenter, 2);
+            Vec4 normal = GeneratePlaneEquation(facePoint0, facePoint1, facePoint2);
+            //Normalisation to ensure the plane inequality must be ax + by + cz >= d for the point to be in the outer tetrahedron
+            float centerDot = Vec4Dot(normal, GetPointInTetrahedron(testTet, points, &totalCenter, 3 - j));
+            if (j == 0)
+            {
+                if (centerDot >= normal.x[3])
+                {
+                    normal = Vec4ScalarMultiply(normal, -1.0f);
+                }
+            }
+            else
+            {
+                if (centerDot < normal.x[3])
+                {
+                    normal = Vec4ScalarMultiply(normal, -1.0f);
+                }
+            }
+            faceEquations[j] = normal;
+        }
+        BSPNode* thisOutTetLeafRoot = outTetLeavesRoot + 13 * i;
+        for (int j = 0; j < 4; j++) //By entry face
+        {
+            BSPNode* thisOutFaceLeafRoot = thisOutTetLeafRoot + 3 * j;
+            for (int k = 0; k < 4; k++) //By comparison face
+            {
+                if (j == k) continue;
+                Vec4 thisEq = faceEquations[k];
+                thisOutFaceLeafRoot->q0 = thisEq.x[0];
+                thisOutFaceLeafRoot->q1 = thisEq.x[1];
+                thisOutFaceLeafRoot->q2 = thisEq.x[2];
+                thisOutFaceLeafRoot->q3 = thisEq.x[3];
+                Tetrahedron thisFace = testFaces[k];
+                if (k >= 3 || (j >= 3 && k >= 2)) thisOutFaceLeafRoot->l = (struct BSPNode*)(thisOutTetLeafRoot + 12);
+                else thisOutFaceLeafRoot->l = (struct BSPNode*)(thisOutFaceLeafRoot + 1);
+                int adjTetInd = outTetAdj[i].v[k];
+                if (adjTetInd < 0)
+                {
+                    Tetrahedron compTet = outTets[-1 - adjTetInd];
+                    Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
+                    Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
+                    Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
+                    int faceInd = 1;
+                    if (FacesAreSame(thisFace, cFace1)) faceInd = 1;
+                    else if (FacesAreSame(thisFace, cFace2)) faceInd = 2;
+                    else if (FacesAreSame(thisFace, cFace3)) faceInd = 3;
+                    thisOutFaceLeafRoot->r = (struct BSPNode*)(outTetLeavesRoot + 13 * (-1 - adjTetInd) + 3 * faceInd);
+                }
+                else
+                {
+                    Tetrahedron compTet = tets[adjTetInd];
+                    Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], compTet.v[2], -1};
+                    Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
+                    Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
+                    Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
+                    int faceInd = 0;
+                    if (FacesAreSame(thisFace, cFace0)) faceInd = 0;
+                    else if (FacesAreSame(thisFace, cFace1)) faceInd = 1;
+                    else if (FacesAreSame(thisFace, cFace2)) faceInd = 2;
+                    else if (FacesAreSame(thisFace, cFace3)) faceInd = 3;
+                    thisOutFaceLeafRoot->r = (struct BSPNode*)(tetLeavesRoot + 13 * adjTetInd + 3 * faceInd);
+                }
+                thisOutFaceLeafRoot++;
+            }
+        }
+        int outCols[4];
+        outCols[0] = testTet.v[0]; outCols[1] = testTet.v[1]; outCols[2] = testTet.v[2]; outCols[3] = testTet.v[3];
+        SortColourIndicesByLuma(outCols, 3);
+        thisOutTetLeafRoot += 12;
+        thisOutTetLeafRoot->p0 = outCols[0];
+        thisOutTetLeafRoot->p1 = outCols[1];
+        thisOutTetLeafRoot->p2 = outCols[2];
+        thisOutTetLeafRoot->p3 = outCols[3];
+        thisOutTetLeafRoot->l = NULL;
+        thisOutTetLeafRoot->r = NULL;
+    }
+    //Fudge the first node for now
+    *bspTree = tetLeavesRoot[3];
+    bspTree->l = (struct BSPNode*)(tetLeavesRoot);
+    free(outTets);
+    free(tetAdj);
+    free(outTetAdj);
+    free(tetCenters);
+    return bspTree;
+}
+
+static ColourRGBA OrderedDitherBayer2x2(ColourRGBA col, int x, int y)
+{
+    Tetrahedron tetra = TraverseBSPTree(bspStruct, ColourRGBAToVec4(col));
+    ColourRGBA uniqueCols[4];
     int numUniqueCols = 0;
     for (int i = 0; i < 4; i++)
     {
-        uniqueCols[i] = -1;
-    }
-    for (int i = 0; i < 24; i++)
-    {
-        ColourRGBA tempCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(col), ColourRGBAToVec4(accumErr), ColourRGBAToVec4(coeff)));
-        tempCol = ClampColourSRGB(tempCol);
-        int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
-        for (int j = 0; j < 4; j++)
+        if (tetra.v[i] >= 0)
         {
-            if (uniqueCols[j] < 0)
-            {
-                uniqueCols[j] = outInd;
-                numUniqueCols++;
-                break;
-            }
-            else if (uniqueCols[j] == outInd)
-            {
-                break;
-            }
+            uniqueCols[i] = srcpalette[tetra.v[i]];
+            numUniqueCols++;
         }
-        if (numUniqueCols >= 4) break;
-        ColourRGBA palCol = srcpalette[outInd];
-        ColourRGBA outerr = Vec4ToColourRGBA(Vec4Sub(ColourRGBAToVec4(col), ColourRGBAToVec4(palCol)));
-        accumErr = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(accumErr), ColourRGBAToVec4(outerr)));
+        else if (tetra.v[i] == -1)
+        {
+            uniqueCols[i] = centralColour;
+            numUniqueCols++;
+        }
     }
-    SortColourIndicesByLuma(uniqueCols, numUniqueCols);
     Vec4 mixRatio;
     switch (numUniqueCols)
     {
         case 1:
         {
-            ColourRGBA outcol = srcpalette[uniqueCols[0]];
+            ColourRGBA outcol = uniqueCols[0];
             outcol.A = col.A;
             return outcol;
         }
         case 2:
-            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]));
+            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]));
             break;
         case 3:
-            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]));
+            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]), ColourRGBAToVec4(uniqueCols[2]));
             break;
         case 4:
-            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]), ColourRGBAToVec4(srcpalette[uniqueCols[3]]));
+            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]), ColourRGBAToVec4(uniqueCols[2]), ColourRGBAToVec4(uniqueCols[3]));
+            break;
+    }
+    int selInd = bayer2x2i[(y % 2) * 2 + (x % 2)];
+    float threshold = (((float)selInd) + 0.5f) * 0.25f;
+    ColourRGBA outcol;
+    if (threshold <= mixRatio.x[0]) outcol = srcpalette[tetra.v[0]];
+    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[tetra.v[1]];
+    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[tetra.v[2]];
+    else outcol = srcpalette[tetra.v[3]];
+    outcol.A = col.A;
+    return outcol;
+}
+
+static ColourRGBA OrderedDitherBayer4x4(ColourRGBA col, int x, int y)
+{
+    Tetrahedron tetra = TraverseBSPTree(bspStruct, ColourRGBAToVec4(col));
+    ColourRGBA uniqueCols[4];
+    int numUniqueCols = 0;
+    for (int i = 0; i < 4; i++)
+    {
+        if (tetra.v[i] >= 0)
+        {
+            uniqueCols[i] = srcpalette[tetra.v[i]];
+            numUniqueCols++;
+        }
+        else if (tetra.v[i] == -1)
+        {
+            uniqueCols[i] = centralColour;
+            numUniqueCols++;
+        }
+    }
+    Vec4 mixRatio;
+    switch (numUniqueCols)
+    {
+        case 1:
+        {
+            ColourRGBA outcol = uniqueCols[0];
+            outcol.A = col.A;
+            return outcol;
+        }
+        case 2:
+            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]));
+            break;
+        case 3:
+            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]), ColourRGBAToVec4(uniqueCols[2]));
+            break;
+        case 4:
+            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]), ColourRGBAToVec4(uniqueCols[2]), ColourRGBAToVec4(uniqueCols[3]));
+            break;
+    }
+    int selInd = bayer4x4i[(y % 4) * 4 + (x % 4)];
+    float threshold = (((float)selInd) + 0.5f) * 0.0625f;
+    ColourRGBA outcol;
+    if (threshold <= mixRatio.x[0]) outcol = srcpalette[tetra.v[0]];
+    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[tetra.v[1]];
+    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[tetra.v[2]];
+    else outcol = srcpalette[tetra.v[3]];
+    outcol.A = col.A;
+    return outcol;
+}
+
+static ColourRGBA OrderedDitherBayer8x8(ColourRGBA col, int x, int y)
+{
+    Tetrahedron tetra = TraverseBSPTree(bspStruct, ColourRGBAToVec4(col));
+    ColourRGBA uniqueCols[4];
+    int numUniqueCols = 0;
+    for (int i = 0; i < 4; i++)
+    {
+        if (tetra.v[i] >= 0)
+        {
+            uniqueCols[i] = srcpalette[tetra.v[i]];
+            numUniqueCols++;
+        }
+        else if (tetra.v[i] == -1)
+        {
+            uniqueCols[i] = centralColour;
+            numUniqueCols++;
+        }
+    }
+    Vec4 mixRatio;
+    switch (numUniqueCols)
+    {
+        case 1:
+        {
+            ColourRGBA outcol = uniqueCols[0];
+            outcol.A = col.A;
+            return outcol;
+        }
+        case 2:
+            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]));
+            break;
+        case 3:
+            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]), ColourRGBAToVec4(uniqueCols[2]));
+            break;
+        case 4:
+            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]), ColourRGBAToVec4(uniqueCols[2]), ColourRGBAToVec4(uniqueCols[3]));
             break;
     }
     int selInd = bayer8x8i[(y % 8) * 8 + (x % 8)];
     float threshold = (((float)selInd) + 0.5f) * 0.015625f;
     ColourRGBA outcol;
-    if (threshold <= mixRatio.x[0]) outcol = srcpalette[uniqueCols[0]];
-    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[uniqueCols[1]];
-    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[uniqueCols[2]];
-    else outcol = srcpalette[uniqueCols[3]];
+    if (threshold <= mixRatio.x[0]) outcol = srcpalette[tetra.v[0]];
+    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[tetra.v[1]];
+    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[tetra.v[2]];
+    else outcol = srcpalette[tetra.v[3]];
     outcol.A = col.A;
     return outcol;
 }
 
-static ColourRGBA OrderedDitherBayer16x16(ColourRGBA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
+static ColourRGBA OrderedDitherBayer16x16(ColourRGBA col, int x, int y)
 {
-    ColourRGBA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
-    ColourRGBA coeff = { amtL, amtL, amtL, 0.0f };
-    int uniqueCols[4];
+    Tetrahedron tetra = TraverseBSPTree(bspStruct, ColourRGBAToVec4(col));
+    ColourRGBA uniqueCols[4];
     int numUniqueCols = 0;
     for (int i = 0; i < 4; i++)
     {
-        uniqueCols[i] = -1;
-    }
-    for (int i = 0; i < 40; i++)
-    {
-        ColourRGBA tempCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(col), ColourRGBAToVec4(accumErr), ColourRGBAToVec4(coeff)));
-        tempCol = ClampColourSRGB(tempCol);
-        int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
-        for (int j = 0; j < 4; j++)
+        if (tetra.v[i] >= 0)
         {
-            if (uniqueCols[j] < 0)
-            {
-                uniqueCols[j] = outInd;
-                numUniqueCols++;
-                break;
-            }
-            else if (uniqueCols[j] == outInd)
-            {
-                break;
-            }
+            uniqueCols[i] = srcpalette[tetra.v[i]];
+            numUniqueCols++;
         }
-        if (numUniqueCols >= 4) break;
-        ColourRGBA palCol = srcpalette[outInd];
-        ColourRGBA outerr = Vec4ToColourRGBA(Vec4Sub(ColourRGBAToVec4(col), ColourRGBAToVec4(palCol)));
-        accumErr = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(accumErr), ColourRGBAToVec4(outerr)));
+        else if (tetra.v[i] == -1)
+        {
+            uniqueCols[i] = centralColour;
+            numUniqueCols++;
+        }
     }
-    SortColourIndicesByLuma(uniqueCols, numUniqueCols);
     Vec4 mixRatio;
     switch (numUniqueCols)
     {
         case 1:
         {
-            ColourRGBA outcol = srcpalette[uniqueCols[0]];
+            ColourRGBA outcol = uniqueCols[0];
             outcol.A = col.A;
             return outcol;
         }
         case 2:
-            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]));
+            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]));
             break;
         case 3:
-            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]));
+            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]), ColourRGBAToVec4(uniqueCols[2]));
             break;
         case 4:
-            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]), ColourRGBAToVec4(srcpalette[uniqueCols[3]]));
+            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]), ColourRGBAToVec4(uniqueCols[2]), ColourRGBAToVec4(uniqueCols[3]));
             break;
     }
     int selInd = bayer16x16i[(y % 16) * 16 + (x % 16)];
     float threshold = (((float)selInd) + 0.5f) * 0.00390625f;
     ColourRGBA outcol;
-    if (threshold <= mixRatio.x[0]) outcol = srcpalette[uniqueCols[0]];
-    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[uniqueCols[1]];
-    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[uniqueCols[2]];
-    else outcol = srcpalette[uniqueCols[3]];
+    if (threshold <= mixRatio.x[0]) outcol = srcpalette[tetra.v[0]];
+    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[tetra.v[1]];
+    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[tetra.v[2]];
+    else outcol = srcpalette[tetra.v[3]];
     outcol.A = col.A;
     return outcol;
 }
 
-static ColourRGBA OrderedDitherVoid16x16(ColourRGBA col, int x, int y, float amtL, float amtC, float bright, float contrast, float uvbias)
+static ColourRGBA OrderedDitherVoid16x16(ColourRGBA col, int x, int y)
 {
-    ColourRGBA accumErr = { 0.0f, 0.0f, 0.0f, 0.0f };
-    ColourRGBA coeff = { amtL, amtL, amtL, 0.0f };
-    int uniqueCols[4];
+    Tetrahedron tetra = TraverseBSPTree(bspStruct, ColourRGBAToVec4(col));
+    ColourRGBA uniqueCols[4];
     int numUniqueCols = 0;
     for (int i = 0; i < 4; i++)
     {
-        uniqueCols[i] = -1;
-    }
-    for (int i = 0; i < 40; i++)
-    {
-        ColourRGBA tempCol = Vec4ToColourRGBA(Vec4FMA(ColourRGBAToVec4(col), ColourRGBAToVec4(accumErr), ColourRGBAToVec4(coeff)));
-        tempCol = ClampColourSRGB(tempCol);
-        int outInd = GetClosestColourIndexOkLab(tempCol, bright, contrast, uvbias);
-        for (int j = 0; j < 4; j++)
+        if (tetra.v[i] >= 0)
         {
-            if (uniqueCols[j] < 0)
-            {
-                uniqueCols[j] = outInd;
-                numUniqueCols++;
-                break;
-            }
-            else if (uniqueCols[j] == outInd)
-            {
-                break;
-            }
+            uniqueCols[i] = srcpalette[tetra.v[i]];
+            numUniqueCols++;
         }
-        if (numUniqueCols >= 4) break;
-        ColourRGBA palCol = srcpalette[outInd];
-        ColourRGBA outerr = Vec4ToColourRGBA(Vec4Sub(ColourRGBAToVec4(col), ColourRGBAToVec4(palCol)));
-        accumErr = Vec4ToColourRGBA(Vec4Add(ColourRGBAToVec4(accumErr), ColourRGBAToVec4(outerr)));
+        else if (tetra.v[i] == -1)
+        {
+            uniqueCols[i] = centralColour;
+            numUniqueCols++;
+        }
     }
-    SortColourIndicesByLuma(uniqueCols, numUniqueCols);
     Vec4 mixRatio;
     switch (numUniqueCols)
     {
         case 1:
         {
-            ColourRGBA outcol = srcpalette[uniqueCols[0]];
+            ColourRGBA outcol = uniqueCols[0];
             outcol.A = col.A;
             return outcol;
         }
         case 2:
-            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]));
+            mixRatio = GetMixRatios2(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]));
             break;
         case 3:
-            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]));
+            mixRatio = GetMixRatios3(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]), ColourRGBAToVec4(uniqueCols[2]));
             break;
         case 4:
-            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(srcpalette[uniqueCols[0]]), ColourRGBAToVec4(srcpalette[uniqueCols[1]]), ColourRGBAToVec4(srcpalette[uniqueCols[2]]), ColourRGBAToVec4(srcpalette[uniqueCols[3]]));
+            mixRatio = GetMixRatios4(ColourRGBAToVec4(col), ColourRGBAToVec4(uniqueCols[0]), ColourRGBAToVec4(uniqueCols[1]), ColourRGBAToVec4(uniqueCols[2]), ColourRGBAToVec4(uniqueCols[3]));
             break;
     }
     int selInd = void16x16i[(y % 16) * 16 + (x % 16)];
     float threshold = (((float)selInd) + 0.5f) * 0.00390625f;
     ColourRGBA outcol;
-    if (threshold <= mixRatio.x[0]) outcol = srcpalette[uniqueCols[0]];
-    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[uniqueCols[1]];
-    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[uniqueCols[2]];
-    else outcol = srcpalette[uniqueCols[3]];
+    if (threshold <= mixRatio.x[0]) outcol = srcpalette[tetra.v[0]];
+    else if (threshold <= mixRatio.x[1]) outcol = srcpalette[tetra.v[1]];
+    else if (threshold <= mixRatio.x[2]) outcol = srcpalette[tetra.v[2]];
+    else outcol = srcpalette[tetra.v[3]];
     outcol.A = col.A;
     return outcol;
 }
@@ -1930,6 +2645,7 @@ static void prepare(GeglOperation* operation)
     rngNum[2] = 0x78AFC253 * ((unsigned int)operation);
     rngNum[3] = 0x23B90FC7 * ((unsigned int)props); //Yes, I'm seeding the RNG with a memory address
     palettes pal = props->curpal;
+    ditherMethods dmet = props->ditherMethod;
     hasFoundBestColours = 1;
     switch (pal)
     {
@@ -1947,7 +2663,7 @@ static void prepare(GeglOperation* operation)
             break;
         case R2G2B2:
             palSize = 64;
-            selpalette = malloc(palSize * sizeof(ColourRGBA8));
+            selpalette = selpaletteMem;
             for (int i = 0; i < palSize; i++)
             {
                 ColourRGBA8 curCol = { 0x55 * (i & 0x03), 0x55 * ((i & 0x0C) >> 2), 0x55 * ((i & 0x30) >> 4), 0xFF};
@@ -1956,7 +2672,7 @@ static void prepare(GeglOperation* operation)
             break;
         case R3G3B3:
             palSize = 512;
-            selpalette = malloc(palSize * sizeof(ColourRGBA8));
+            selpalette = selpaletteMem;
             for (int i = 0; i < palSize; i++)
             {
                 ColourRGBA8 curCol = { ((((0xFF * (i & 0x0007)) << 20) / 7) + 0x80000) >> 20,
@@ -2008,7 +2724,7 @@ static void prepare(GeglOperation* operation)
             break;
         case ADAPTIVE:
             palSize = props->numcol;
-            selpalette = malloc(palSize * sizeof(ColourRGBA8));
+            selpalette = selpaletteMem;
             hasFoundBestColours = 0;
             hasStartedToFindBestColours = 0;
             canStartNewParallelLoops = 0;
@@ -2018,8 +2734,8 @@ static void prepare(GeglOperation* operation)
             selpalette = (ColourRGBA8*)my16Palette;
             break;
     }
-    srcpalette = malloc(palSize * sizeof(ColourRGBA));
-    palette = malloc(palSize * sizeof(ColourOkLabA));
+    srcpalette = srcpaletteMem;
+    palette = paletteMem;
     minL = 1.0f; maxL = 0.0f;
     maxC = 0.0f;
     minRGBA.R = 1.0f; minRGBA.G = 1.0f; minRGBA.B = 1.0f; minRGBA.A = 0.0f;
@@ -2037,6 +2753,11 @@ static void prepare(GeglOperation* operation)
         float sat = hypotf(labcol.a, labcol.b);
         if (sat > maxC) maxC = sat;
     }
+    if (pal != ADAPTIVE && dmet < FLOYD_STEINBERG)
+    {
+        TetrahedrisePoints((Vec4*)srcpalette, palSize, &numTets);
+        CreateBSPTreeFromTetrahedrons((Vec4*)srcpalette, palSize, tetrahedra, numTets, (Vec4*)(&centralColour));
+    }
 }
 
 static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf, const GeglRectangle* roi, gint level)
@@ -2045,6 +2766,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
     numThreadsSpawned++;
     //Get properties
     GeglProperties* props = GEGL_PROPERTIES(op);
+    ditherMethods dmet = props->ditherMethod;
     if (!hasFoundBestColours) //hacky
     {
         if (!hasStartedToFindBestColours) //First thread spawned by GEGL gets to coordinate the others
@@ -2071,6 +2793,11 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
                 if (labcol.L < minL) minL = labcol.L; if (labcol.L > maxL) maxL = labcol.L;
                 float sat = hypotf(labcol.a, labcol.b);
                 if (sat > maxC) maxC = sat;
+            }
+            if (dmet < FLOYD_STEINBERG)
+            {
+                TetrahedrisePoints((Vec4*)srcpalette, palSize, &numTets);
+                CreateBSPTreeFromTetrahedrons((Vec4*)srcpalette, palSize, tetrahedra, numTets, (Vec4*)(&centralColour));
             }
             hasFoundBestColours = 1;
         }
@@ -2102,7 +2829,6 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
     glong y = roi->y;
     glong w = roi->width;
     glong h = roi->height;
-    ditherMethods dmet = props->ditherMethod;
     gfloat ditAmtEL = props->ditherAmountEL;
     gfloat ditAmtEC = props->ditherAmountEC;
     gfloat rngAmtL = props->randomAmountL;
@@ -2183,7 +2909,7 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             for (glong j = 0; j < w; j++)
             {
                 const glong index = i * w + j;
-                pixel[index] = odfunc(pixel[index], j + x, i + y, ditAmtEL, ditAmtEC, postB, postC, cbias);
+                pixel[index] = odfunc(pixel[index], j + x, i + y);
             }
         }
     }
