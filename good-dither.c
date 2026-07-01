@@ -997,6 +997,40 @@ static int PointIsInCircumsphere(Vec4 point, Vec4 tetPoint0, Vec4 tetPoint1, Vec
     else return 0;
 }
 
+//0 -> outside, 1 -> on edge, 2 -> in circle
+int PointIsInCircumcircle(Vec4 point, Vec4 tetPoint0, Vec4 tetPoint1, Vec4 tetPoint2)
+{
+    //Rebased points
+    Vec4 tetPoint0T = Vec4Sub(tetPoint0, point);
+    Vec4 tetPoint1T = Vec4Sub(tetPoint1, point);
+    Vec4 tetPoint2T = Vec4Sub(tetPoint2, point);
+    Vec4 tetPoint1C = Vec4Sub(tetPoint1, tetPoint0);
+    Vec4 tetPoint2C = Vec4Sub(tetPoint2, tetPoint0);
+
+    //Norms squared
+    double tetPoint0TLSq = Vec4Dot(tetPoint0T, tetPoint0T);
+    double tetPoint1TLSq = Vec4Dot(tetPoint1T, tetPoint1T);
+    double tetPoint2TLSq = Vec4Dot(tetPoint2T, tetPoint2T);
+
+    //Determinant components
+    double bxcymcxby = (double)tetPoint1T.x[0] * (double)tetPoint2T.x[1] - (double)tetPoint2T.x[0] * (double)tetPoint1T.x[1];
+    double bxcsmcxbs = (double)tetPoint1T.x[0] * tetPoint2TLSq           - (double)tetPoint2T.x[0] * tetPoint1TLSq;
+    double bycsmcybs = (double)tetPoint1T.x[1] * tetPoint2TLSq           - (double)tetPoint2T.x[1] * tetPoint1TLSq;
+
+    double det = tetPoint0T.x[0] * bycsmcybs - tetPoint0T.x[1] * bxcsmcxbs + tetPoint0TLSq * bxcymcxby;
+
+    //Cross product to find orientation
+    double bxcymcxbyC = (double)tetPoint1C.x[0] * (double)tetPoint2C.x[1] - (double)tetPoint2C.x[0] * (double)tetPoint1C.x[1];
+    double dist = det * bxcymcxbyC;
+
+    if (dist >= -1e-12)
+    {
+        if (dist <= 1e-12) return 1;
+        else return 2;
+    }
+    else return 0;
+}
+
 static Vec4 GeneratePlaneEquation(Vec4 point0, Vec4 point1, Vec4 point2)
 {
     double line0[4];
@@ -1013,6 +1047,17 @@ static Vec4 GeneratePlaneEquation(Vec4 point0, Vec4 point1, Vec4 point2)
     normal[0] = line0[1] * line1[2] - line0[2] * line1[1];
     normal[1] = line0[2] * line1[0] - line0[0] * line1[2];
     normal[2] = line0[0] * line1[1] - line0[1] * line1[0];
+    normal[3] = normal[0] * (double)point0.x[0] + normal[1] * (double)point0.x[1] + normal[2] * (double)point0.x[2];
+    Vec4 out = { (float)normal[0], (float)normal[1], (float)normal[2], (float)normal[3] };
+    return out;
+}
+
+static Vec4 GeneratePlaneEquationFromNormal(Vec4 point0, Vec4 point1)
+{
+    double normal[4];
+    normal[0] = (double)point1.x[0] - (double)point0.x[0];
+    normal[1] = (double)point1.x[1] - (double)point0.x[1];
+    normal[2] = (double)point1.x[2] - (double)point0.x[2];
     normal[3] = normal[0] * (double)point0.x[0] + normal[1] * (double)point0.x[1] + normal[2] * (double)point0.x[2];
     Vec4 out = { (float)normal[0], (float)normal[1], (float)normal[2], (float)normal[3] };
     return out;
@@ -1051,6 +1096,59 @@ static int FacesAreSame(Tetrahedron faceL, Tetrahedron faceR)
     return faceL.v[2] == faceR.v[k];
 }
 
+static int EdgesAreSame(Tetrahedron edgeL, Tetrahedron edgeR)
+{
+    int Lind0 = edgeL.v[0];
+    int i;
+    for (i = 0; i < 2; i++)
+    {
+        if (Lind0 == edgeR.v[i]) break;
+    }
+    if (i >= 2) return 0;
+    int j;
+    switch (i)
+    {
+        case 0:
+            j = 1;
+            break;
+        case 1:
+            j = 0;
+            break;
+    }
+    return edgeL.v[1] == edgeR.v[j];
+}
+
+static int GetDimensionality(Vec4* points, int nPoints)
+{
+    if (nPoints <= 2) return 1;
+    int dim = 1;
+    int divPoint = 2;
+    Vec4 testLineVec0 = Vec4Sub(points[1], points[0]);
+    for (int i = 2; i < nPoints; i++)
+    {
+        Vec4 testLineVecN = Vec4Sub(points[i], points[0]);
+        Vec4 crossVec = Vec4Cross(testLineVec0, testLineVecN);
+        float crossLenSq = Vec4Dot(crossVec, crossVec);
+        if (crossLenSq > 1e-16f)
+        {
+            divPoint = i;
+            dim = 2;
+            break;
+        }
+    }
+    if (dim < 2) return 1;
+    for (int i = 3; i < nPoints; i++)
+    {
+        float volume = TripleProduct(points[0], points[1], points[divPoint], points[i]);
+        if (volume < 0.0f) volume = -volume;
+        if (volume > 1e-16f)
+        {
+            return 3;
+        }
+    }
+    return 2;
+}
+
 static Tetrahedron TraverseBSPTree(BSPNode* bsp, Vec4 point)
 {
     if (bsp->l == NULL)
@@ -1073,7 +1171,7 @@ static Tetrahedron TraverseBSPTree(BSPNode* bsp, Vec4 point)
     }
 }
 
-static Tetrahedron* TetrahedrisePoints(Vec4* points, int nPoints, int* nTets)
+static Tetrahedron* TetrahedrisePoints(Vec4* points, int nPoints, int dim, int* nTets)
 {
     Tetrahedron* tetList = malloc(nPoints * 32 * sizeof(Tetrahedron));
     Tetrahedron* polyhedraHole = malloc(nPoints * 4 * sizeof(Tetrahedron));
@@ -1089,170 +1187,470 @@ static Tetrahedron* TetrahedrisePoints(Vec4* points, int nPoints, int* nTets)
     Vec4 min = {  99.9f,  99.9f,  99.9f,  99.9f };
     Vec4 max = { -99.9f, -99.9f, -99.9f, -99.9f };
     //Do a small coordinate transform to break symmetries
-    for (int i = 0; i < nPoints; i++)
+    if (dim == 3)
     {
-        Vec4 inPoint = points[i];
-        Vec4 outPoint;
-        float addAmt = (inPoint.x[1] + inPoint.x[2]) * 0.0001f;
-        outPoint.x[0] = inPoint.x[0] + addAmt;
-        outPoint.x[1] = inPoint.x[1] + addAmt;
-        outPoint.x[2] = inPoint.x[2] + addAmt;
-        outPoint.x[3] = inPoint.x[3];
-        modPoints[i] = outPoint;
-    }
-    //Find the surrounding tetrahedron
-    for (int i = 0; i < nPoints; i++)
-    {
-        Vec4 testPoint = points[i];
-        for (int j = 0; j < 4; j++)
+        for (int i = 0; i < nPoints; i++)
         {
-            if (testPoint.x[j] < min.x[j]) min.x[j] = testPoint.x[j];
-            else if (testPoint.x[j] > max.x[j]) max.x[j] = testPoint.x[j];
+            Vec4 inPoint = points[i];
+            Vec4 outPoint;
+            float addAmt = (inPoint.x[1] + inPoint.x[2]) * 0.0001f;
+            outPoint.x[0] = inPoint.x[0] + addAmt;
+            outPoint.x[1] = inPoint.x[1] + addAmt;
+            outPoint.x[2] = inPoint.x[2] + addAmt;
+            outPoint.x[3] = inPoint.x[3];
+            modPoints[i] = outPoint;
         }
     }
-    Vec4 delta = Vec4ScalarMultiply(Vec4Sub(max, min), 16.0f);
-    Vec4 center = Vec4ScalarMultiply(Vec4Add(min, max), 0.5f);
-    Vec4 cmind = Vec4Sub(center, delta);
-    Vec4 cplud = Vec4Add(center, delta);
-    superTetPoints[0].x[0] = center.x[0];
-    superTetPoints[0].x[1] = center.x[1];
-    superTetPoints[0].x[2] = cplud.x[2];
-    superTetPoints[1].x[0] = center.x[0];
-    superTetPoints[1].x[1] = cplud.x[1];
-    superTetPoints[1].x[2] = cmind.x[2];
-    superTetPoints[2].x[0] = cplud.x[0];
-    superTetPoints[2].x[1] = cmind.x[1];
-    superTetPoints[2].x[2] = cmind.x[2];
-    superTetPoints[3].x[0] = cmind.x[0];
-    superTetPoints[3].x[1] = cmind.x[1];
-    superTetPoints[3].x[2] = cmind.x[2];
-    for (int i = 0; i < nPoints; i++)
+    //Coordinate transform to a plane
+    else if (dim == 2)
     {
-        Vec4 testPoint = modPoints[i];
-        memset(badTets, 0, nTet * sizeof(int));
-        //Find all invalidated tetrahedra
-        for (int j = 0; j < nTet; j++)
+        Vec4 divPoint = points[2];
+        Vec4 testLineVec0 = Vec4Sub(points[1], points[0]);
+        for (int i = 2; i < nPoints; i++)
         {
-            Tetrahedron testTet = tetList[j];
-            int csppos = PointIsInCircumsphere(testPoint, GetPointInTetrahedron(testTet, modPoints, superTetPoints, 0), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 1), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 2), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 3));
-            if (csppos >= 2)
+            Vec4 testLineVecN = Vec4Sub(points[i], points[0]);
+            Vec4 crossVec = Vec4Cross(testLineVec0, testLineVecN);
+            float crossLenSq = Vec4Dot(crossVec, crossVec);
+            if (crossLenSq > 1e-16f)
             {
-                badTets[j] = 1;
+                divPoint = points[i];
+                break;
             }
         }
-        //Find polyhedral hole
-        int numFaces = 0;
-        int insertPos = 0;
-        for (int j = 0; j < nTet; j++)
+        //Create orthonormal basis to avoid distortion (since the source coordinates use an orthonormal basis as well)
+        Vec4 testLineVec1 = Vec4Sub(divPoint, points[0]);
+        Vec4 testNorm = Vec4Cross(testLineVec0, testLineVec1);
+        Vec4 orthoLineVec1 = Vec4Cross(testNorm, testLineVec0);
+        double testLineVec0LSq = Vec4Dot(testLineVec0, testLineVec0);
+        Vec4 basisVec0 = Vec4ScalarMultiply(testLineVec0, (float)(1.0/sqrt(testLineVec0LSq)));
+        double orthoLineVec1LSq = Vec4Dot(orthoLineVec1, orthoLineVec1);
+        Vec4 basisVec1 = Vec4ScalarMultiply(orthoLineVec1, (float)(1.0/sqrt(orthoLineVec1LSq)));
+        for (int i = 0; i < nPoints; i++)
         {
-            if (badTets[j])
+            Vec4 inPoint = points[i];
+            Vec4 tp = Vec4Sub(inPoint, points[0]);
+            float fac1 = Vec4Dot(basisVec0, tp);
+            float fac2 = Vec4Dot(basisVec1, tp);
+            Vec4 transformPoint = { fac1, fac2, 0.0f, 0.0f};
+            Vec4 outPoint;
+            //Skew transform to break symmetries
+            float addAmt = transformPoint.x[1] * 0.0001f;
+            outPoint.x[0] = transformPoint.x[0] + addAmt;
+            outPoint.x[1] = transformPoint.x[1] + addAmt;
+            outPoint.x[2] = 0.0f;
+            outPoint.x[3] = 0.0f;
+            modPoints[i] = outPoint;
+        }
+    }
+    //Find the surrounding tetrahedron
+    if (dim == 3)
+    {
+        for (int i = 0; i < nPoints; i++)
+        {
+            Vec4 testPoint = points[i];
+            for (int j = 0; j < 4; j++)
+            {
+                if (testPoint.x[j] < min.x[j]) min.x[j] = testPoint.x[j];
+                else if (testPoint.x[j] > max.x[j]) max.x[j] = testPoint.x[j];
+            }
+        }
+        Vec4 delta = Vec4ScalarMultiply(Vec4Sub(max, min), 16.0f);
+        Vec4 center = Vec4ScalarMultiply(Vec4Add(min, max), 0.5f);
+        Vec4 cmind = Vec4Sub(center, delta);
+        Vec4 cplud = Vec4Add(center, delta);
+        superTetPoints[0].x[0] = center.x[0];
+        superTetPoints[0].x[1] = center.x[1];
+        superTetPoints[0].x[2] = cplud.x[2];
+        superTetPoints[0].x[3] = 0.0f;
+        superTetPoints[1].x[0] = center.x[0];
+        superTetPoints[1].x[1] = cplud.x[1];
+        superTetPoints[1].x[2] = cmind.x[2];
+        superTetPoints[1].x[3] = 0.0f;
+        superTetPoints[2].x[0] = cplud.x[0];
+        superTetPoints[2].x[1] = cmind.x[1];
+        superTetPoints[2].x[2] = cmind.x[2];
+        superTetPoints[2].x[3] = 0.0f;
+        superTetPoints[3].x[0] = cmind.x[0];
+        superTetPoints[3].x[1] = cmind.x[1];
+        superTetPoints[3].x[2] = cmind.x[2];
+        superTetPoints[3].x[3] = 0.0f;
+    }
+    //Find the surrounding triangle
+    else if (dim == 2)
+    {
+        for (int i = 0; i < nPoints; i++)
+        {
+            Vec4 testPoint = modPoints[i];
+            for (int j = 0; j < 4; j++)
+            {
+                if (testPoint.x[j] < min.x[j]) min.x[j] = testPoint.x[j];
+                else if (testPoint.x[j] > max.x[j]) max.x[j] = testPoint.x[j];
+            }
+        }
+        Vec4 delta = Vec4ScalarMultiply(Vec4Sub(max, min), 16.0f);
+        Vec4 center = Vec4ScalarMultiply(Vec4Add(min, max), 0.5f);
+        Vec4 cmind = Vec4Sub(center, delta);
+        Vec4 cplud = Vec4Add(center, delta);
+        superTetPoints[0].x[0] = cmind.x[0];
+        superTetPoints[0].x[1] = cmind.x[1];
+        superTetPoints[0].x[2] = 0.0f;
+        superTetPoints[0].x[3] = 0.0f;
+        superTetPoints[1].x[0] = cplud.x[0];
+        superTetPoints[1].x[1] = cmind.x[1];
+        superTetPoints[1].x[2] = 0.0f;
+        superTetPoints[1].x[3] = 0.0f;
+        superTetPoints[2].x[0] = center.x[0];
+        superTetPoints[2].x[1] = cplud.x[1];
+        superTetPoints[2].x[2] = 0.0f;
+        superTetPoints[2].x[3] = 0.0f;
+    }
+
+    //Find tetrahedrons
+    if (dim == 3)
+    {
+        for (int i = 0; i < nPoints; i++)
+        {
+            Vec4 testPoint = modPoints[i];
+            memset(badTets, 0, nTet * sizeof(int));
+            //Find all invalidated tetrahedra
+            for (int j = 0; j < nTet; j++)
             {
                 Tetrahedron testTet = tetList[j];
-                Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], 0};
-                Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], 0};
-                Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], 0};
-                Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], 0};
-                Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
-                for (int n = 0; n < 4; n++)
+                int csppos = PointIsInCircumsphere(testPoint, GetPointInTetrahedron(testTet, modPoints, superTetPoints, 0), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 1), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 2), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 3));
+                if (csppos >= 2)
                 {
-                    int faceMask = 1;
-                    Tetrahedron thisFace = testFaces[n];
-                    for (int k = 0; k < numFaces; k++)
+                    badTets[j] = 1;
+                }
+            }
+            //Find polyhedral hole
+            int numFaces = 0;
+            int insertPos = 0;
+            for (int j = 0; j < nTet; j++)
+            {
+                if (badTets[j])
+                {
+                    Tetrahedron testTet = tetList[j];
+                    Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], 0};
+                    Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], 0};
+                    Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], 0};
+                    Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], 0};
+                    Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+                    for (int n = 0; n < 4; n++)
                     {
-                        if (!badFaces[k] && FacesAreSame(thisFace, polyhedraHole[k]))
+                        int faceMask = 1;
+                        Tetrahedron thisFace = testFaces[n];
+                        for (int k = 0; k < numFaces; k++)
                         {
-                            if (k >= numFaces - 1)
+                            if (!badFaces[k] && FacesAreSame(thisFace, polyhedraHole[k]))
                             {
-                                numFaces--;
-                                if (k < insertPos) insertPos = k;
+                                if (k >= numFaces - 1)
+                                {
+                                    numFaces--;
+                                    if (k < insertPos) insertPos = k;
+                                }
+                                else
+                                {
+                                    badFaces[k] = 1;
+                                    if (k < insertPos) insertPos = k;
+                                }
+                                faceMask = 0;
+                                break;
+                            }
+                        }
+                        if (faceMask)
+                        {
+                            polyhedraHole[insertPos] = thisFace;
+                            badFaces[insertPos] = 0;
+                            if (insertPos >= numFaces)
+                            {
+                                numFaces++;
+                                insertPos = numFaces;
+                                if (insertPos > maxHoleSize) maxHoleSize = insertPos;
                             }
                             else
                             {
-                                badFaces[k] = 1;
-                                if (k < insertPos) insertPos = k;
-                            }
-                            faceMask = 0;
-                            break;
-                        }
-                    }
-                    if (faceMask)
-                    {
-                        polyhedraHole[insertPos] = thisFace;
-                        badFaces[insertPos] = 0;
-                        if (insertPos >= numFaces)
-                        {
-                            numFaces++;
-                            insertPos = numFaces;
-                            if (insertPos > maxHoleSize) maxHoleSize = insertPos;
-                        }
-                        else
-                        {
-                            int newInsertPos = numFaces;
-                            for (int k = insertPos + 1; k < numFaces; k++)
-                            {
-                                if (badFaces[k])
+                                int newInsertPos = numFaces;
+                                for (int k = insertPos + 1; k < numFaces; k++)
                                 {
-                                    newInsertPos = k;
-                                    break;
+                                    if (badFaces[k])
+                                    {
+                                        newInsertPos = k;
+                                        break;
+                                    }
                                 }
+                                insertPos = newInsertPos;
                             }
-                            insertPos = newInsertPos;
                         }
                     }
                 }
             }
-        }
-        //Remove invalidated tetrahedra
-        int newNTets = 0;
-        for (int j = 0; j < nTet; j++)
-        {
-            while (badTets[j])
+            //Remove invalidated tetrahedra
+            int newNTets = 0;
+            for (int j = 0; j < nTet; j++)
             {
-                j++;
+                while (badTets[j])
+                {
+                    j++;
+                    if (j >= nTet) break;
+                }
                 if (j >= nTet) break;
-            }
-            if (j >= nTet) break;
-            Tetrahedron inTet = tetList[j];
-            float tProd = TripleProduct(GetPointInTetrahedron(inTet, points, superTetPoints, 0), GetPointInTetrahedron(inTet, points, superTetPoints, 1), GetPointInTetrahedron(inTet, points, superTetPoints, 2), GetPointInTetrahedron(inTet, points, superTetPoints, 3));
-            tProd = fabsf(tProd);
-            if (tProd < 1e-8f) continue; //Reject degenerate tetrahedra
-            tetList[newNTets] = inTet;
-            newNTets++;
-        }
-        nTet = newNTets;
-        //Re-tetrahedrise in hole
-        for (int j = 0; j < numFaces; j++)
-        {
-            if (!badFaces[j])
-            {
-                Tetrahedron newTet = polyhedraHole[j];
-                newTet.v[3] = i;
-                float tProd = TripleProduct(GetPointInTetrahedron(newTet, points, superTetPoints, 0), GetPointInTetrahedron(newTet, points, superTetPoints, 1), GetPointInTetrahedron(newTet, points, superTetPoints, 2), GetPointInTetrahedron(newTet, points, superTetPoints, 3));
+                Tetrahedron inTet = tetList[j];
+                float tProd = TripleProduct(GetPointInTetrahedron(inTet, points, superTetPoints, 0), GetPointInTetrahedron(inTet, points, superTetPoints, 1), GetPointInTetrahedron(inTet, points, superTetPoints, 2), GetPointInTetrahedron(inTet, points, superTetPoints, 3));
                 tProd = fabsf(tProd);
                 if (tProd < 1e-8f) continue; //Reject degenerate tetrahedra
-                tetList[nTet] = newTet;
-                nTet++;
+                tetList[newNTets] = inTet;
+                newNTets++;
             }
+            nTet = newNTets;
+            //Re-tetrahedrise in hole
+            for (int j = 0; j < numFaces; j++)
+            {
+                if (!badFaces[j])
+                {
+                    Tetrahedron newTet = polyhedraHole[j];
+                    newTet.v[3] = i;
+                    float tProd = TripleProduct(GetPointInTetrahedron(newTet, points, superTetPoints, 0), GetPointInTetrahedron(newTet, points, superTetPoints, 1), GetPointInTetrahedron(newTet, points, superTetPoints, 2), GetPointInTetrahedron(newTet, points, superTetPoints, 3));
+                    tProd = fabsf(tProd);
+                    if (tProd < 1e-8f) continue; //Reject degenerate tetrahedra
+                    tetList[nTet] = newTet;
+                    nTet++;
+                }
+            }
+            if (nTet > maxNTet) maxNTet = nTet;
+            if (numFaces > maxHoleSize) maxHoleSize = numFaces;
         }
-        if (nTet > maxNTet) maxNTet = nTet;
-        if (numFaces > maxHoleSize) maxHoleSize = numFaces;
     }
+    //Find triangles
+    else if (dim == 2)
+    {
+        for (int i = 0; i < nPoints; i++)
+        {
+            Vec4 testPoint = modPoints[i];
+            memset(badTets, 0, nTet * sizeof(int));
+            //Find all invalidated triangles
+            for (int j = 0; j < nTet; j++)
+            {
+                Tetrahedron testTet = tetList[j];
+                int csppos = PointIsInCircumcircle(testPoint, GetPointInTetrahedron(testTet, modPoints, superTetPoints, 0), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 1), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 2));
+                if (csppos >= 2)
+                {
+                    badTets[j] = 1;
+                }
+            }
+            //Find polygonal hole
+            int numFaces = 0;
+            int insertPos = 0;
+            for (int j = 0; j < nTet; j++)
+            {
+                if (badTets[j])
+                {
+                    Tetrahedron testTet = tetList[j];
+                    Tetrahedron face0 = { testTet.v[0], testTet.v[1], 0, 0};
+                    Tetrahedron face1 = { testTet.v[0], testTet.v[2], 0, 0};
+                    Tetrahedron face2 = { testTet.v[1], testTet.v[2], 0, 0};
+                    Tetrahedron testFaces[3] = { face0, face1, face2 };
+                    for (int n = 0; n < 3; n++)
+                    {
+                        int faceMask = 1;
+                        Tetrahedron thisFace = testFaces[n];
+                        for (int k = 0; k < numFaces; k++)
+                        {
+                            if (!badFaces[k] && EdgesAreSame(thisFace, polyhedraHole[k]))
+                            {
+                                if (k >= numFaces - 1)
+                                {
+                                    numFaces--;
+                                    if (k < insertPos) insertPos = k;
+                                }
+                                else
+                                {
+                                    badFaces[k] = 1;
+                                    if (k < insertPos) insertPos = k;
+                                }
+                                faceMask = 0;
+                                break;
+                            }
+                        }
+                        if (faceMask)
+                        {
+                            polyhedraHole[insertPos] = thisFace;
+                            badFaces[insertPos] = 0;
+                            if (insertPos >= numFaces)
+                            {
+                                numFaces++;
+                                insertPos = numFaces;
+                                if (insertPos > maxHoleSize) maxHoleSize = insertPos;
+                            }
+                            else
+                            {
+                                int newInsertPos = numFaces;
+                                for (int k = insertPos + 1; k < numFaces; k++)
+                                {
+                                    if (badFaces[k])
+                                    {
+                                        newInsertPos = k;
+                                        break;
+                                    }
+                                }
+                                insertPos = newInsertPos;
+                            }
+                        }
+                    }
+                }
+            }
+            //Remove invalidated triangles
+            int newNTets = 0;
+            for (int j = 0; j < nTet; j++)
+            {
+                while (badTets[j])
+                {
+                    j++;
+                    if (j >= nTet) break;
+                }
+                if (j >= nTet) break;
+                Tetrahedron inTet = tetList[j];
+                Vec4 edge0 = Vec4Sub(GetPointInTetrahedron(inTet, points, superTetPoints, 1), GetPointInTetrahedron(inTet, points, superTetPoints, 0));
+                Vec4 edge1 = Vec4Sub(GetPointInTetrahedron(inTet, points, superTetPoints, 2), GetPointInTetrahedron(inTet, points, superTetPoints, 0));
+                Vec4 cProd = Vec4Cross(edge0, edge1);
+                float tProd = Vec4Dot(cProd, cProd);
+                if (tProd < 1e-16f) continue; //Reject degenerate triangles
+                tetList[newNTets] = inTet;
+                newNTets++;
+            }
+            nTet = newNTets;
+            //Re-triangulate in hole
+            for (int j = 0; j < numFaces; j++)
+            {
+                if (!badFaces[j])
+                {
+                    Tetrahedron newTet = polyhedraHole[j];
+                    newTet.v[2] = i;
+                    Vec4 edge0 = Vec4Sub(GetPointInTetrahedron(newTet, points, superTetPoints, 1), GetPointInTetrahedron(newTet, points, superTetPoints, 0));
+                    Vec4 edge1 = Vec4Sub(GetPointInTetrahedron(newTet, points, superTetPoints, 2), GetPointInTetrahedron(newTet, points, superTetPoints, 0));
+                    Vec4 cProd = Vec4Cross(edge0, edge1);
+                    float tProd = Vec4Dot(cProd, cProd);
+                    if (tProd < 1e-16f) continue; //Reject degenerate triangles
+                    newTet.v[3] = -2;
+                    tetList[nTet] = newTet;
+                    nTet++;
+                }
+            }
+            if (nTet > maxNTet) maxNTet = nTet;
+            if (numFaces > maxHoleSize) maxHoleSize = numFaces;
+        }
+    }
+    //Find line segments (absolute piece of cake)
+    else if (dim == 1)
+    {
+        Vec4 guideLine = Vec4Sub(points[1], points[0]);
+        Tetrahedron firstTet = { 0, 1, -2, -2 };
+        tetList[0] = firstTet;
+        float maxDist = Vec4Dot(guideLine, guideLine);
+        float minDist = 0.0f;
+        int maxPoint = 1;
+        int minPoint = 0;
+        for (int i = 2; i < nPoints; i++)
+        {
+            Vec4 diffVec = Vec4Sub(points[i], points[0]);
+            float dist = Vec4Dot(diffVec, guideLine);
+            if (dist <= maxDist && dist >= minDist) //Need to split a line segment
+            {
+                int lowerInd = minPoint;
+                int upperInd = maxPoint;
+                float lowerDist = minDist;
+                float upperDist = maxDist;
+                for (int j = 0; j < i; j++)
+                {
+                    Vec4 mergeDiffVec = Vec4Sub(points[j], points[0]);
+                    float mergeDist = Vec4Dot(mergeDiffVec, guideLine);
+                    if (mergeDist > lowerDist)
+                    {
+                        lowerDist = mergeDist;
+                        lowerInd = j;
+                    }
+                    else if (mergeDist < upperDist)
+                    {
+                        upperDist = mergeDist;
+                        upperInd = j;
+                    }
+                }
+                for (int j = 0; j < nTet; j++)
+                {
+                    Tetrahedron inLineSeg = tetList[j];
+                    if (inLineSeg.v[0] == lowerInd && inLineSeg.v[1] == upperInd)
+                    {
+                        Tetrahedron setTet = { lowerInd, i, -2, -2 };
+                        tetList[j] = setTet;
+                        setTet.v[0] = i;
+                        setTet.v[1] = upperInd;
+                        tetList[nTet] = setTet;
+                        break;
+                    }
+                }
+            }
+            else //Append a line segment
+            {
+                if (dist > maxDist)
+                {
+                    maxDist = dist;
+                    Tetrahedron setTet = { maxPoint, i, -2, -2 };
+                    tetList[nTet] = setTet;
+                    maxPoint = i;
+                }
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    Tetrahedron setTet = { i, minPoint, -2, -2 };
+                    tetList[nTet] = setTet;
+                    minPoint = i;
+                }
+            }
+            nTet++;
+        }
+        maxNTet = nTet;
+    }
+
     free(polyhedraHole);
     free(badFaces);
     free(badTets);
     int trueNTets = 0;
-    for (int i = 0; i < nTet; i++)
+    if (dim == 3)
     {
-        Tetrahedron inTet = tetList[i];
-        if (inTet.v[0] < 0) continue;
-        if (inTet.v[1] < 0) continue;
-        if (inTet.v[2] < 0) continue;
-        if (inTet.v[3] < 0) continue; //Sever all connections to the super tetrahedron
-        float tProd = TripleProduct(GetPointInTetrahedron(inTet, points, NULL, 0), GetPointInTetrahedron(inTet, points, NULL, 1), GetPointInTetrahedron(inTet, points, NULL, 2), GetPointInTetrahedron(inTet, points, NULL, 3));
-        tProd = fabsf(tProd);
-        if (tProd < 1e-8f) continue; //Reject degenerate tetrahedra
-        tetList[trueNTets] = inTet;
-        trueNTets++;
+        for (int i = 0; i < nTet; i++)
+        {
+            Tetrahedron inTet = tetList[i];
+            if (inTet.v[0] < 0) continue;
+            if (inTet.v[1] < 0) continue;
+            if (inTet.v[2] < 0) continue;
+            if (inTet.v[3] < 0) continue; //Sever all connections to the super tetrahedron
+            float tProd = TripleProduct(GetPointInTetrahedron(inTet, points, NULL, 0), GetPointInTetrahedron(inTet, points, NULL, 1), GetPointInTetrahedron(inTet, points, NULL, 2), GetPointInTetrahedron(inTet, points, NULL, 3));
+            tProd = fabsf(tProd);
+            if (tProd < 1e-8f) continue; //Reject degenerate tetrahedra
+            tetList[trueNTets] = inTet;
+            trueNTets++;
+        }
+    }
+    else if (dim == 2)
+    {
+        for (int i = 0; i < nTet; i++)
+        {
+            Tetrahedron inTet = tetList[i];
+            if (inTet.v[0] < 0) continue;
+            if (inTet.v[1] < 0) continue;
+            if (inTet.v[2] < 0) continue; //Sever all connections to the super triangle
+            Vec4 edge0 = Vec4Sub(GetPointInTetrahedron(inTet, points, NULL, 1), GetPointInTetrahedron(inTet, points, NULL, 0));
+            Vec4 edge1 = Vec4Sub(GetPointInTetrahedron(inTet, points, NULL, 2), GetPointInTetrahedron(inTet, points, NULL, 0));
+            Vec4 cProd = Vec4Cross(edge0, edge1);
+            float tProd = Vec4Dot(cProd, cProd);
+            if (tProd < 1e-16f) continue; //Reject degenerate triangles
+            inTet.v[3] = -2;
+            tetList[trueNTets] = inTet;
+            trueNTets++;
+        }
+    }
+    else if (dim == 1) //Trivial
+    {
+        trueNTets = nTet;
     }
     Tetrahedron* outTets = tetrahedra;
     memcpy(outTets, tetList, trueNTets * sizeof(Tetrahedron));
@@ -1262,7 +1660,7 @@ static Tetrahedron* TetrahedrisePoints(Vec4* points, int nPoints, int* nTets)
     return outTets;
 }
 
-static BSPNode* CreateBSPTreeFromTetrahedrons(Vec4* points, int nPoints, Tetrahedron* tets, int nTets, Vec4* centerPoint)
+static BSPNode* CreateBSPTreeFromTetrahedrons(Vec4* points, int nPoints, Tetrahedron* tets, int nTets, int dim, Vec4* centerPoint)
 {
     //Determine some geometric centers
     Vec4 totalCenter = points[0];
@@ -1273,13 +1671,35 @@ static BSPNode* CreateBSPTreeFromTetrahedrons(Vec4* points, int nPoints, Tetrahe
     totalCenter = Vec4ScalarMultiply(totalCenter, 1.0f/((float)nPoints));
     *centerPoint = totalCenter;
     Vec4* tetCenters = malloc(nTets * sizeof(Vec4));
-    for (int i = 0; i < nTets; i++)
+    if (dim == 3)
     {
-        Tetrahedron inTet = tets[i];
-        Vec4 a = Vec4Add(GetPointInTetrahedron(inTet, points, NULL, 0), GetPointInTetrahedron(inTet, points, NULL, 1));
-        Vec4 b = Vec4Add(GetPointInTetrahedron(inTet, points, NULL, 2), GetPointInTetrahedron(inTet, points, NULL, 3));
-        Vec4 c = Vec4Add(a, b);
-        tetCenters[i] = Vec4ScalarMultiply(c, 0.25f);
+        for (int i = 0; i < nTets; i++)
+        {
+            Tetrahedron inTet = tets[i];
+            Vec4 a = Vec4Add(GetPointInTetrahedron(inTet, points, NULL, 0), GetPointInTetrahedron(inTet, points, NULL, 1));
+            Vec4 b = Vec4Add(GetPointInTetrahedron(inTet, points, NULL, 2), GetPointInTetrahedron(inTet, points, NULL, 3));
+            Vec4 c = Vec4Add(a, b);
+            tetCenters[i] = Vec4ScalarMultiply(c, 0.25f);
+        }
+    }
+    else if (dim == 2)
+    {
+        for (int i = 0; i < nTets; i++)
+        {
+            Tetrahedron inTet = tets[i];
+            Vec4 a = Vec4Add(GetPointInTetrahedron(inTet, points, NULL, 0), GetPointInTetrahedron(inTet, points, NULL, 1));
+            Vec4 b = Vec4Add(GetPointInTetrahedron(inTet, points, NULL, 2), a);
+            tetCenters[i] = Vec4ScalarMultiply(b, 0.333333333333333333333333333333333333333333333f);
+        }
+    }
+    else if (dim == 1)
+    {
+        for (int i = 0; i < nTets; i++)
+        {
+            Tetrahedron inTet = tets[i];
+            Vec4 a = Vec4Add(GetPointInTetrahedron(inTet, points, NULL, 0), GetPointInTetrahedron(inTet, points, NULL, 1));
+            tetCenters[i] = Vec4ScalarMultiply(a, 0.5f);
+        }
     }
 
     //Generate a list of tetrahedrons to handle any areas outside the given tetrahedron mesh
@@ -1287,57 +1707,174 @@ static BSPNode* CreateBSPTreeFromTetrahedrons(Vec4* points, int nPoints, Tetrahe
     int* badFaces = malloc(nTets * 4 * sizeof(int));
     int nOutTets = 0;
     int insertPos = 0;
-    for (int i = 0; i < nTets; i++)
+    if (dim == 3)
     {
-        Tetrahedron testTet = tets[i];
-        Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
-        Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
-        Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
-        Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
-        Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
-        for (int n = 0; n < 4; n++)
+        for (int i = 0; i < nTets; i++)
         {
-            int faceMask = 1;
-            Tetrahedron thisFace = testFaces[n];
-            for (int k = 0; k < nOutTets; k++)
+            Tetrahedron testTet = tets[i];
+            Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
+            Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
+            Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
+            Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
+            Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+            for (int n = 0; n < 4; n++)
             {
-                if (!badFaces[k] && FacesAreSame(thisFace, outTets[k]))
+                int faceMask = 1;
+                Tetrahedron thisFace = testFaces[n];
+                for (int k = 0; k < nOutTets; k++)
                 {
-                    if (k >= nOutTets - 1)
+                    if (!badFaces[k] && FacesAreSame(thisFace, outTets[k]))
                     {
-                        nOutTets--;
-                        if (k < insertPos) insertPos = k;
+                        if (k >= nOutTets - 1)
+                        {
+                            nOutTets--;
+                            if (k < insertPos) insertPos = k;
+                        }
+                        else
+                        {
+                            badFaces[k] = 1;
+                            if (k < insertPos) insertPos = k;
+                        }
+                        faceMask = 0;
+                        break;
+                    }
+                }
+                if (faceMask)
+                {
+                    outTets[insertPos] = thisFace;
+                    badFaces[insertPos] = 0;
+                    if (insertPos >= nOutTets)
+                    {
+                        nOutTets++;
+                        insertPos = nOutTets;
                     }
                     else
                     {
-                        badFaces[k] = 1;
-                        if (k < insertPos) insertPos = k;
+                        int newInsertPos = nOutTets;
+                        for (int k = insertPos + 1; k < nOutTets; k++)
+                        {
+                            if (badFaces[k])
+                            {
+                                newInsertPos = k;
+                                break;
+                            }
+                        }
+                        insertPos = newInsertPos;
                     }
-                    faceMask = 0;
-                    break;
                 }
             }
-            if (faceMask)
+        }
+    }
+    else if (dim == 2)
+    {
+        for (int i = 0; i < nTets; i++)
+        {
+            Tetrahedron testTet = tets[i];
+            Tetrahedron face0 = { testTet.v[0], testTet.v[1], -1, -1};
+            Tetrahedron face1 = { testTet.v[0], testTet.v[2], -1, -1};
+            Tetrahedron face2 = { testTet.v[1], testTet.v[2], -1, -1};
+            Tetrahedron testFaces[3] = { face0, face1, face2 };
+            for (int n = 0; n < 3; n++)
             {
-                outTets[insertPos] = thisFace;
-                badFaces[insertPos] = 0;
-                if (insertPos >= nOutTets)
+                int faceMask = 1;
+                Tetrahedron thisFace = testFaces[n];
+                for (int k = 0; k < nOutTets; k++)
                 {
-                    nOutTets++;
-                    insertPos = nOutTets;
-                }
-                else
-                {
-                    int newInsertPos = nOutTets;
-                    for (int k = insertPos + 1; k < nOutTets; k++)
+                    if (!badFaces[k] && EdgesAreSame(thisFace, outTets[k]))
                     {
-                        if (badFaces[k])
+                        if (k >= nOutTets - 1)
                         {
-                            newInsertPos = k;
-                            break;
+                            nOutTets--;
+                            if (k < insertPos) insertPos = k;
                         }
+                        else
+                        {
+                            badFaces[k] = 1;
+                            if (k < insertPos) insertPos = k;
+                        }
+                        faceMask = 0;
+                        break;
                     }
-                    insertPos = newInsertPos;
+                }
+                if (faceMask)
+                {
+                    outTets[insertPos] = thisFace;
+                    badFaces[insertPos] = 0;
+                    if (insertPos >= nOutTets)
+                    {
+                        nOutTets++;
+                        insertPos = nOutTets;
+                    }
+                    else
+                    {
+                        int newInsertPos = nOutTets;
+                        for (int k = insertPos + 1; k < nOutTets; k++)
+                        {
+                            if (badFaces[k])
+                            {
+                                newInsertPos = k;
+                                break;
+                            }
+                        }
+                        insertPos = newInsertPos;
+                    }
+                }
+            }
+        }
+    }
+    else if (dim == 1)
+    {
+        for (int i = 0; i < nTets; i++)
+        {
+            Tetrahedron testTet = tets[i];
+            int point0 = testTet.v[0];
+            int point1 = testTet.v[1];
+            int testPoints[2] = { point0, point1 };
+            for (int n = 0; n < 2; n++)
+            {
+                int faceMask = 1;
+                int thisPoint = testPoints[n];
+                for (int k = 0; k < nOutTets; k++)
+                {
+                    if (!badFaces[k] && outTets[k].v[0] == thisPoint)
+                    {
+                        if (k >= nOutTets - 1)
+                        {
+                            nOutTets--;
+                            if (k < insertPos) insertPos = k;
+                        }
+                        else
+                        {
+                            badFaces[k] = 1;
+                            if (k < insertPos) insertPos = k;
+                        }
+                        faceMask = 0;
+                        break;
+                    }
+                }
+                if (faceMask)
+                {
+                    Tetrahedron insertTet = { thisPoint, -1, -2, -2 };
+                    outTets[insertPos] = insertTet;
+                    badFaces[insertPos] = 0;
+                    if (insertPos >= nOutTets)
+                    {
+                        nOutTets++;
+                        insertPos = nOutTets;
+                    }
+                    else
+                    {
+                        int newInsertPos = nOutTets;
+                        for (int k = insertPos + 1; k < nOutTets; k++)
+                        {
+                            if (badFaces[k])
+                            {
+                                newInsertPos = k;
+                                break;
+                            }
+                        }
+                        insertPos = newInsertPos;
+                    }
                 }
             }
         }
@@ -1360,45 +1897,136 @@ static BSPNode* CreateBSPTreeFromTetrahedrons(Vec4* points, int nPoints, Tetrahe
     //Generate adjacency list for the given tetrahedra
     Tetrahedron* tetAdj = malloc(nTets * sizeof(Tetrahedron));
     Tetrahedron* outTetAdj = malloc(nOutTets * sizeof(Tetrahedron)); //We can start filling in a bit of this to save some time
-    for (int i = 0; i < nTets; i++)
+    if (dim == 3)
     {
-        Tetrahedron testTet = tets[i];
-        Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
-        Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
-        Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
-        Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
-        Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
-        Tetrahedron* thisAdj = tetAdj + i;
-        for (int j = 0; j < 4; j++)
+        for (int i = 0; i < nTets; i++)
         {
-            Tetrahedron thisFace = testFaces[j];
-            int hasFound = 0;
-            for (int k = 0; k < nTets; k++)
+            Tetrahedron testTet = tets[i];
+            Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
+            Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
+            Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
+            Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
+            Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+            Tetrahedron* thisAdj = tetAdj + i;
+            for (int j = 0; j < 4; j++)
             {
-                if (i == k) continue;
-                Tetrahedron compTet = tets[k];
-                Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], compTet.v[2], -1};
-                Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
-                Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
-                Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
-                if (FacesAreSame(thisFace, cFace0) || FacesAreSame(thisFace, cFace1) || FacesAreSame(thisFace, cFace2) || FacesAreSame(thisFace, cFace3))
+                Tetrahedron thisFace = testFaces[j];
+                int hasFound = 0;
+                for (int k = 0; k < nTets; k++)
                 {
-                    thisAdj->v[j] = k;
-                    hasFound = 1;
-                    break;
-                }
-            }
-            if (!hasFound)
-            {
-                for (int k = 0; k < nOutTets; k++)
-                {
-                    Tetrahedron compFace = outTets[k];
-                    if (FacesAreSame(thisFace, compFace))
+                    if (i == k) continue;
+                    Tetrahedron compTet = tets[k];
+                    Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], compTet.v[2], -1};
+                    Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
+                    Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
+                    Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
+                    if (FacesAreSame(thisFace, cFace0) || FacesAreSame(thisFace, cFace1) || FacesAreSame(thisFace, cFace2) || FacesAreSame(thisFace, cFace3))
                     {
-                        thisAdj->v[j] = -1 - k;
-                        outTetAdj[k].v[0] = i;
+                        thisAdj->v[j] = k;
                         hasFound = 1;
                         break;
+                    }
+                }
+                if (!hasFound)
+                {
+                    for (int k = 0; k < nOutTets; k++)
+                    {
+                        Tetrahedron compFace = outTets[k];
+                        if (FacesAreSame(thisFace, compFace))
+                        {
+                            thisAdj->v[j] = -1 - k;
+                            outTetAdj[k].v[0] = i;
+                            hasFound = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else if (dim == 2)
+    {
+        for (int i = 0; i < nTets; i++)
+        {
+            Tetrahedron testTet = tets[i];
+            Tetrahedron face0 = { testTet.v[0], testTet.v[1], -1, -1};
+            Tetrahedron face1 = { testTet.v[0], testTet.v[2], -1, -1};
+            Tetrahedron face2 = { testTet.v[1], testTet.v[2], -1, -1};
+            Tetrahedron testFaces[3] = { face0, face1, face2 };
+            Tetrahedron* thisAdj = tetAdj + i;
+            for (int j = 0; j < 3; j++)
+            {
+                Tetrahedron thisFace = testFaces[j];
+                int hasFound = 0;
+                for (int k = 0; k < nTets; k++)
+                {
+                    if (i == k) continue;
+                    Tetrahedron compTet = tets[k];
+                    Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], -1, -1};
+                    Tetrahedron cFace1 = { compTet.v[0], compTet.v[2], -1, -1};
+                    Tetrahedron cFace2 = { compTet.v[1], compTet.v[2], -1, -1};
+                    if (EdgesAreSame(thisFace, cFace0) || EdgesAreSame(thisFace, cFace1) || EdgesAreSame(thisFace, cFace2))
+                    {
+                        thisAdj->v[j] = k;
+                        hasFound = 1;
+                        break;
+                    }
+                }
+                if (!hasFound)
+                {
+                    for (int k = 0; k < nOutTets; k++)
+                    {
+                        Tetrahedron compFace = outTets[k];
+                        if (EdgesAreSame(thisFace, compFace))
+                        {
+                            thisAdj->v[j] = -1 - k;
+                            outTetAdj[k].v[0] = i;
+                            hasFound = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else if (dim == 1)
+    {
+        for (int i = 0; i < nTets; i++)
+        {
+            Tetrahedron testTet = tets[i];
+            int point0 = testTet.v[0];
+            int point1 = testTet.v[1];
+            int testPoints[2] = { point0, point1 };
+            Tetrahedron* thisAdj = tetAdj + i;
+            for (int j = 0; j < 2; j++)
+            {
+                int thisPoint = testPoints[j];
+                int hasFound = 0;
+                for (int k = 0; k < nTets; k++)
+                {
+                    if (i == k) continue;
+                    Tetrahedron compTet = tets[k];
+                    int cPoint0 = compTet.v[0];
+                    int cPoint1 = compTet.v[1];
+                    if (thisPoint == cPoint0 || thisPoint == cPoint1)
+                    {
+                        thisAdj->v[j] = k;
+                        hasFound = 1;
+                        break;
+                    }
+                }
+                if (!hasFound)
+                {
+                    for (int k = 0; k < nOutTets; k++)
+                    {
+                        Tetrahedron compPoint = outTets[k];
+                        if (thisPoint == compPoint.v[0])
+                        {
+                            thisAdj->v[j] = -1 - k;
+                            outTetAdj[k].v[0] = i;
+                            hasFound = 1;
+                            break;
+                        }
                     }
                 }
             }
@@ -1406,28 +2034,79 @@ static BSPNode* CreateBSPTreeFromTetrahedrons(Vec4* points, int nPoints, Tetrahe
     }
 
     //Generate adjacency list for the outside tetrahedra
-    for (int i = 0; i < nOutTets; i++)
+    if (dim == 3)
     {
-        Tetrahedron testTet = outTets[i];
-        Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
-        Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
-        Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
-        Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
-        Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
-        Tetrahedron* thisAdj = outTetAdj + i;
-        for (int j = 1; j < 4; j++)
+        for (int i = 0; i < nOutTets; i++)
         {
-            Tetrahedron thisFace = testFaces[j];
+            Tetrahedron testTet = outTets[i];
+            Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
+            Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
+            Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
+            Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
+            Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+            Tetrahedron* thisAdj = outTetAdj + i;
+            for (int j = 1; j < 4; j++)
+            {
+                Tetrahedron thisFace = testFaces[j];
+                for (int k = 0; k < nOutTets; k++)
+                {
+                    if (i == k) continue;
+                    Tetrahedron compTet = outTets[k];
+                    Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
+                    Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
+                    Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
+                    if (FacesAreSame(thisFace, cFace1) || FacesAreSame(thisFace, cFace2) || FacesAreSame(thisFace, cFace3))
+                    {
+                        thisAdj->v[j] = -1 - k;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (dim == 2)
+    {
+        for (int i = 0; i < nOutTets; i++)
+        {
+            Tetrahedron testTet = outTets[i];
+            Tetrahedron face0 = { testTet.v[0], testTet.v[1], -1, -1};
+            Tetrahedron face1 = { testTet.v[0], testTet.v[2], -1, -1};
+            Tetrahedron face2 = { testTet.v[1], testTet.v[2], -1, -1};
+            Tetrahedron testFaces[3] = { face0, face1, face2 };
+            Tetrahedron* thisAdj = outTetAdj + i;
+            for (int j = 1; j < 3; j++)
+            {
+                Tetrahedron thisFace = testFaces[j];
+                for (int k = 0; k < nOutTets; k++)
+                {
+                    if (i == k) continue;
+                    Tetrahedron compTet = outTets[k];
+                    Tetrahedron cFace1 = { compTet.v[0], compTet.v[2], -1, -1};
+                    Tetrahedron cFace2 = { compTet.v[1], compTet.v[2], -1, -1};
+                    if (EdgesAreSame(thisFace, cFace1) || EdgesAreSame(thisFace, cFace2))
+                    {
+                        thisAdj->v[j] = -1 - k;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    else if (dim == 1)
+    {
+        for (int i = 0; i < nOutTets; i++)
+        {
+            Tetrahedron testTet = outTets[i];
+            Tetrahedron* thisAdj = outTetAdj + i;
+            int thisPoint = testTet.v[1];
             for (int k = 0; k < nOutTets; k++)
             {
                 if (i == k) continue;
                 Tetrahedron compTet = outTets[k];
-                Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
-                Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
-                Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
-                if (FacesAreSame(thisFace, cFace1) || FacesAreSame(thisFace, cFace2) || FacesAreSame(thisFace, cFace3))
+                int cPoint1 = compTet.v[1];
+                if (thisPoint == cPoint1)
                 {
-                    thisAdj->v[j] = -1 - k;
+                    thisAdj->v[1] = -1 - k;
                     break;
                 }
             }
@@ -1440,172 +2119,463 @@ static BSPNode* CreateBSPTreeFromTetrahedrons(Vec4* points, int nPoints, Tetrahe
     BSPNode* outTetLeavesRoot = tetLeavesRoot + 13 * nTets;
     BSPNode* bspTreeConstructRoot = outTetLeavesRoot + 13 * nOutTets;
     //Generate leaf nodes
-    for (int i = 0; i < nTets; i++)
+    if (dim == 3)
     {
-        Tetrahedron testTet = tets[i];
-        Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
-        Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
-        Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
-        Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
-        Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
-        Vec4 faceEquations[4];
-        Vec4 thisCenter = tetCenters[i];
-        for (int j = 0; j < 4; j++)
+        for (int i = 0; i < nTets; i++)
         {
-            Tetrahedron thisFace = testFaces[j];
-            Vec4 facePoint0 = GetPointInTetrahedron(thisFace, points, NULL, 0);
-            Vec4 facePoint1 = GetPointInTetrahedron(thisFace, points, NULL, 1);
-            Vec4 facePoint2 = GetPointInTetrahedron(thisFace, points, NULL, 2);
-            Vec4 normal = GeneratePlaneEquation(facePoint0, facePoint1, facePoint2);
-            //Normalisation to ensure the plane inequality must be ax + by + cz >= d for the point to be in the tetrahedron
-            float centerDot = Vec4Dot(normal, thisCenter);
-            if (centerDot < normal.x[3])
+            Tetrahedron testTet = tets[i];
+            Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
+            Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
+            Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
+            Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
+            Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+            Vec4 faceEquations[4];
+            Vec4 thisCenter = tetCenters[i];
+            for (int j = 0; j < 4; j++)
             {
-                normal = Vec4ScalarMultiply(normal, -1.0f);
-            }
-            faceEquations[j] = normal;
-        }
-        BSPNode* thisTetLeafRoot = tetLeavesRoot + 13 * i;
-        for (int j = 0; j < 4; j++) //By entry face
-        {
-            BSPNode* thisFaceLeafRoot = thisTetLeafRoot + 3 * j;
-            for (int k = 0; k < 4; k++) //By comparison face
-            {
-                if (j == k) continue;
-                Vec4 thisEq = faceEquations[k];
-                thisFaceLeafRoot->q0 = thisEq.x[0];
-                thisFaceLeafRoot->q1 = thisEq.x[1];
-                thisFaceLeafRoot->q2 = thisEq.x[2];
-                thisFaceLeafRoot->q3 = thisEq.x[3];
-                Tetrahedron thisFace = testFaces[k];
-                if (k >= 3 || (j >= 3 && k >= 2)) thisFaceLeafRoot->l = (struct BSPNode*)(thisTetLeafRoot + 12);
-                else thisFaceLeafRoot->l = (struct BSPNode*)(thisFaceLeafRoot + 1);
-                int adjTetInd = tetAdj[i].v[k];
-                if (adjTetInd < 0)
-                {
-                    thisFaceLeafRoot->r = (struct BSPNode*)(outTetLeavesRoot + 13 * (-1 - adjTetInd));
-                }
-                else
-                {
-                    Tetrahedron compTet = tets[adjTetInd];
-                    Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], compTet.v[2], -1};
-                    Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
-                    Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
-                    Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
-                    int faceInd = 0;
-                    if (FacesAreSame(thisFace, cFace0)) faceInd = 0;
-                    else if (FacesAreSame(thisFace, cFace1)) faceInd = 1;
-                    else if (FacesAreSame(thisFace, cFace2)) faceInd = 2;
-                    else if (FacesAreSame(thisFace, cFace3)) faceInd = 3;
-                    thisFaceLeafRoot->r = (struct BSPNode*)(tetLeavesRoot + 13 * adjTetInd + 3 * faceInd);
-                }
-                thisFaceLeafRoot++;
-            }
-        }
-        int outCols[4];
-        outCols[0] = testTet.v[0]; outCols[1] = testTet.v[1]; outCols[2] = testTet.v[2]; outCols[3] = testTet.v[3];
-        SortColourIndicesByLuma(outCols, 4);
-        thisTetLeafRoot += 12;
-        thisTetLeafRoot->p0 = outCols[0];
-        thisTetLeafRoot->p1 = outCols[1];
-        thisTetLeafRoot->p2 = outCols[2];
-        thisTetLeafRoot->p3 = outCols[3];
-        thisTetLeafRoot->l = NULL;
-        thisTetLeafRoot->r = NULL;
-    }
-    for (int i = 0; i < nOutTets; i++)
-    {
-        Tetrahedron testTet = outTets[i];
-        Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
-        Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
-        Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
-        Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
-        Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
-        Vec4 faceEquations[4];
-        for (int j = 0; j < 4; j++)
-        {
-            Tetrahedron thisFace = testFaces[j];
-            Vec4 facePoint0 = GetPointInTetrahedron(thisFace, points, &totalCenter, 0);
-            Vec4 facePoint1 = GetPointInTetrahedron(thisFace, points, &totalCenter, 1);
-            Vec4 facePoint2 = GetPointInTetrahedron(thisFace, points, &totalCenter, 2);
-            Vec4 normal = GeneratePlaneEquation(facePoint0, facePoint1, facePoint2);
-            //Normalisation to ensure the plane inequality must be ax + by + cz >= d for the point to be in the outer tetrahedron
-            float centerDot = Vec4Dot(normal, GetPointInTetrahedron(testTet, points, &totalCenter, 3 - j));
-            if (j == 0)
-            {
-                if (centerDot >= normal.x[3])
-                {
-                    normal = Vec4ScalarMultiply(normal, -1.0f);
-                }
-            }
-            else
-            {
+                Tetrahedron thisFace = testFaces[j];
+                Vec4 facePoint0 = GetPointInTetrahedron(thisFace, points, NULL, 0);
+                Vec4 facePoint1 = GetPointInTetrahedron(thisFace, points, NULL, 1);
+                Vec4 facePoint2 = GetPointInTetrahedron(thisFace, points, NULL, 2);
+                Vec4 normal = GeneratePlaneEquation(facePoint0, facePoint1, facePoint2);
+                //Normalisation to ensure the plane inequality must be ax + by + cz >= d for the point to be in the tetrahedron
+                float centerDot = Vec4Dot(normal, thisCenter);
                 if (centerDot < normal.x[3])
                 {
                     normal = Vec4ScalarMultiply(normal, -1.0f);
                 }
+                faceEquations[j] = normal;
             }
-            faceEquations[j] = normal;
-        }
-        BSPNode* thisOutTetLeafRoot = outTetLeavesRoot + 13 * i;
-        for (int j = 0; j < 4; j++) //By entry face
-        {
-            BSPNode* thisOutFaceLeafRoot = thisOutTetLeafRoot + 3 * j;
-            for (int k = 0; k < 4; k++) //By comparison face
+            BSPNode* thisTetLeafRoot = tetLeavesRoot + 13 * i;
+            for (int j = 0; j < 4; j++) //By entry face
             {
-                if (j == k) continue;
-                Vec4 thisEq = faceEquations[k];
-                thisOutFaceLeafRoot->q0 = thisEq.x[0];
-                thisOutFaceLeafRoot->q1 = thisEq.x[1];
-                thisOutFaceLeafRoot->q2 = thisEq.x[2];
-                thisOutFaceLeafRoot->q3 = thisEq.x[3];
-                Tetrahedron thisFace = testFaces[k];
-                if (k >= 3 || (j >= 3 && k >= 2)) thisOutFaceLeafRoot->l = (struct BSPNode*)(thisOutTetLeafRoot + 12);
-                else thisOutFaceLeafRoot->l = (struct BSPNode*)(thisOutFaceLeafRoot + 1);
-                int adjTetInd = outTetAdj[i].v[k];
-                if (adjTetInd < 0)
+                BSPNode* thisFaceLeafRoot = thisTetLeafRoot + 3 * j;
+                for (int k = 0; k < 4; k++) //By comparison face
                 {
-                    Tetrahedron compTet = outTets[-1 - adjTetInd];
-                    Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
-                    Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
-                    Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
-                    int faceInd = 1;
-                    if (FacesAreSame(thisFace, cFace1)) faceInd = 1;
-                    else if (FacesAreSame(thisFace, cFace2)) faceInd = 2;
-                    else if (FacesAreSame(thisFace, cFace3)) faceInd = 3;
-                    thisOutFaceLeafRoot->r = (struct BSPNode*)(outTetLeavesRoot + 13 * (-1 - adjTetInd) + 3 * faceInd);
+                    if (j == k) continue;
+                    Vec4 thisEq = faceEquations[k];
+                    thisFaceLeafRoot->q0 = thisEq.x[0];
+                    thisFaceLeafRoot->q1 = thisEq.x[1];
+                    thisFaceLeafRoot->q2 = thisEq.x[2];
+                    thisFaceLeafRoot->q3 = thisEq.x[3];
+                    Tetrahedron thisFace = testFaces[k];
+                    if (k >= 3 || (j >= 3 && k >= 2)) thisFaceLeafRoot->l = (struct BSPNode*)(thisTetLeafRoot + 12);
+                    else thisFaceLeafRoot->l = (struct BSPNode*)(thisFaceLeafRoot + 1);
+                    int adjTetInd = tetAdj[i].v[k];
+                    if (adjTetInd < 0)
+                    {
+                        thisFaceLeafRoot->r = (struct BSPNode*)(outTetLeavesRoot + 13 * (-1 - adjTetInd));
+                    }
+                    else
+                    {
+                        Tetrahedron compTet = tets[adjTetInd];
+                        Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], compTet.v[2], -1};
+                        Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
+                        Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
+                        Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
+                        int faceInd = 0;
+                        if (FacesAreSame(thisFace, cFace0)) faceInd = 0;
+                        else if (FacesAreSame(thisFace, cFace1)) faceInd = 1;
+                        else if (FacesAreSame(thisFace, cFace2)) faceInd = 2;
+                        else if (FacesAreSame(thisFace, cFace3)) faceInd = 3;
+                        thisFaceLeafRoot->r = (struct BSPNode*)(tetLeavesRoot + 13 * adjTetInd + 3 * faceInd);
+                    }
+                    thisFaceLeafRoot++;
+                }
+            }
+            int outCols[4];
+            outCols[0] = testTet.v[0]; outCols[1] = testTet.v[1]; outCols[2] = testTet.v[2]; outCols[3] = testTet.v[3];
+            SortColourIndicesByLuma(outCols, 4);
+            thisTetLeafRoot += 12;
+            thisTetLeafRoot->p0 = outCols[0];
+            thisTetLeafRoot->p1 = outCols[1];
+            thisTetLeafRoot->p2 = outCols[2];
+            thisTetLeafRoot->p3 = outCols[3];
+            thisTetLeafRoot->l = NULL;
+            thisTetLeafRoot->r = NULL;
+        }
+        for (int i = 0; i < nOutTets; i++)
+        {
+            Tetrahedron testTet = outTets[i];
+            Tetrahedron face0 = { testTet.v[0], testTet.v[1], testTet.v[2], -1};
+            Tetrahedron face1 = { testTet.v[0], testTet.v[1], testTet.v[3], -1};
+            Tetrahedron face2 = { testTet.v[0], testTet.v[2], testTet.v[3], -1};
+            Tetrahedron face3 = { testTet.v[1], testTet.v[2], testTet.v[3], -1};
+            Tetrahedron testFaces[4] = { face0, face1, face2, face3 };
+            Vec4 faceEquations[4];
+            for (int j = 0; j < 4; j++)
+            {
+                Tetrahedron thisFace = testFaces[j];
+                Vec4 facePoint0 = GetPointInTetrahedron(thisFace, points, &totalCenter, 0);
+                Vec4 facePoint1 = GetPointInTetrahedron(thisFace, points, &totalCenter, 1);
+                Vec4 facePoint2 = GetPointInTetrahedron(thisFace, points, &totalCenter, 2);
+                Vec4 normal = GeneratePlaneEquation(facePoint0, facePoint1, facePoint2);
+                //Normalisation to ensure the plane inequality must be ax + by + cz >= d for the point to be in the outer tetrahedron
+                float centerDot = Vec4Dot(normal, GetPointInTetrahedron(testTet, points, &totalCenter, 3 - j));
+                if (j == 0)
+                {
+                    if (centerDot >= normal.x[3])
+                    {
+                        normal = Vec4ScalarMultiply(normal, -1.0f);
+                    }
                 }
                 else
                 {
-                    Tetrahedron compTet = tets[adjTetInd];
-                    Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], compTet.v[2], -1};
-                    Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
-                    Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
-                    Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
-                    int faceInd = 0;
-                    if (FacesAreSame(thisFace, cFace0)) faceInd = 0;
-                    else if (FacesAreSame(thisFace, cFace1)) faceInd = 1;
-                    else if (FacesAreSame(thisFace, cFace2)) faceInd = 2;
-                    else if (FacesAreSame(thisFace, cFace3)) faceInd = 3;
-                    thisOutFaceLeafRoot->r = (struct BSPNode*)(tetLeavesRoot + 13 * adjTetInd + 3 * faceInd);
+                    if (centerDot < normal.x[3])
+                    {
+                        normal = Vec4ScalarMultiply(normal, -1.0f);
+                    }
                 }
-                thisOutFaceLeafRoot++;
+                faceEquations[j] = normal;
+            }
+            BSPNode* thisOutTetLeafRoot = outTetLeavesRoot + 13 * i;
+            for (int j = 0; j < 4; j++) //By entry face
+            {
+                BSPNode* thisOutFaceLeafRoot = thisOutTetLeafRoot + 3 * j;
+                for (int k = 0; k < 4; k++) //By comparison face
+                {
+                    if (j == k) continue;
+                    Vec4 thisEq = faceEquations[k];
+                    thisOutFaceLeafRoot->q0 = thisEq.x[0];
+                    thisOutFaceLeafRoot->q1 = thisEq.x[1];
+                    thisOutFaceLeafRoot->q2 = thisEq.x[2];
+                    thisOutFaceLeafRoot->q3 = thisEq.x[3];
+                    Tetrahedron thisFace = testFaces[k];
+                    if (k >= 3 || (j >= 3 && k >= 2)) thisOutFaceLeafRoot->l = (struct BSPNode*)(thisOutTetLeafRoot + 12);
+                    else thisOutFaceLeafRoot->l = (struct BSPNode*)(thisOutFaceLeafRoot + 1);
+                    int adjTetInd = outTetAdj[i].v[k];
+                    if (adjTetInd < 0)
+                    {
+                        Tetrahedron compTet = outTets[-1 - adjTetInd];
+                        Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
+                        Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
+                        Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
+                        int faceInd = 1;
+                        if (FacesAreSame(thisFace, cFace1)) faceInd = 1;
+                        else if (FacesAreSame(thisFace, cFace2)) faceInd = 2;
+                        else if (FacesAreSame(thisFace, cFace3)) faceInd = 3;
+                        thisOutFaceLeafRoot->r = (struct BSPNode*)(outTetLeavesRoot + 13 * (-1 - adjTetInd) + 3 * faceInd);
+                    }
+                    else
+                    {
+                        Tetrahedron compTet = tets[adjTetInd];
+                        Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], compTet.v[2], -1};
+                        Tetrahedron cFace1 = { compTet.v[0], compTet.v[1], compTet.v[3], -1};
+                        Tetrahedron cFace2 = { compTet.v[0], compTet.v[2], compTet.v[3], -1};
+                        Tetrahedron cFace3 = { compTet.v[1], compTet.v[2], compTet.v[3], -1};
+                        int faceInd = 0;
+                        if (FacesAreSame(thisFace, cFace0)) faceInd = 0;
+                        else if (FacesAreSame(thisFace, cFace1)) faceInd = 1;
+                        else if (FacesAreSame(thisFace, cFace2)) faceInd = 2;
+                        else if (FacesAreSame(thisFace, cFace3)) faceInd = 3;
+                        thisOutFaceLeafRoot->r = (struct BSPNode*)(tetLeavesRoot + 13 * adjTetInd + 3 * faceInd);
+                    }
+                    thisOutFaceLeafRoot++;
+                }
+            }
+            int outCols[4];
+            outCols[0] = testTet.v[0]; outCols[1] = testTet.v[1]; outCols[2] = testTet.v[2]; outCols[3] = testTet.v[3];
+            SortColourIndicesByLuma(outCols, 3);
+            thisOutTetLeafRoot += 12;
+            thisOutTetLeafRoot->p0 = outCols[0];
+            thisOutTetLeafRoot->p1 = outCols[1];
+            thisOutTetLeafRoot->p2 = outCols[2];
+            thisOutTetLeafRoot->p3 = outCols[3];
+            thisOutTetLeafRoot->l = NULL;
+            thisOutTetLeafRoot->r = NULL;
+        }
+        //Fudge the first node for now
+        *bspTree = tetLeavesRoot[3];
+        bspTree->l = (struct BSPNode*)(tetLeavesRoot);
+    }
+    else if (dim == 2)
+    {
+        Vec4 divPoint = points[2];
+        Vec4 testLineVec0 = Vec4Sub(points[1], points[0]);
+        for (int i = 2; i < nPoints; i++)
+        {
+            Vec4 testLineVecN = Vec4Sub(points[i], points[0]);
+            Vec4 crossVec = Vec4Cross(testLineVec0, testLineVecN);
+            float crossLenSq = Vec4Dot(crossVec, crossVec);
+            if (crossLenSq > 1e-16f)
+            {
+                divPoint = points[i];
+                break;
             }
         }
-        int outCols[4];
-        outCols[0] = testTet.v[0]; outCols[1] = testTet.v[1]; outCols[2] = testTet.v[2]; outCols[3] = testTet.v[3];
-        SortColourIndicesByLuma(outCols, 3);
-        thisOutTetLeafRoot += 12;
-        thisOutTetLeafRoot->p0 = outCols[0];
-        thisOutTetLeafRoot->p1 = outCols[1];
-        thisOutTetLeafRoot->p2 = outCols[2];
-        thisOutTetLeafRoot->p3 = outCols[3];
-        thisOutTetLeafRoot->l = NULL;
-        thisOutTetLeafRoot->r = NULL;
+        Vec4 testLineVec1 = Vec4Sub(divPoint, points[0]);
+        Vec4 totalNormal = Vec4Cross(testLineVec0, testLineVec1);
+        for (int i = 0; i < nTets; i++)
+        {
+            Tetrahedron testTet = tets[i];
+            Tetrahedron face0 = { testTet.v[0], testTet.v[1], -1, -1};
+            Tetrahedron face1 = { testTet.v[0], testTet.v[2], -1, -1};
+            Tetrahedron face2 = { testTet.v[1], testTet.v[2], -1, -1};
+            Tetrahedron testFaces[3] = { face0, face1, face2 };
+            Vec4 faceEquations[3];
+            Vec4 thisCenter = tetCenters[i];
+            for (int j = 0; j < 3; j++)
+            {
+                Tetrahedron thisFace = testFaces[j];
+                Vec4 facePoint0 = GetPointInTetrahedron(thisFace, points, NULL, 0);
+                Vec4 facePoint1 = GetPointInTetrahedron(thisFace, points, NULL, 1);
+                Vec4 facePoint2 = Vec4Add(facePoint0, totalNormal);
+                Vec4 normal = GeneratePlaneEquation(facePoint0, facePoint1, facePoint2);
+                //Normalisation to ensure the plane inequality must be ax + by + cz >= d for the point to be in the tetrahedron
+                float centerDot = Vec4Dot(normal, thisCenter);
+                if (centerDot < normal.x[3])
+                {
+                    normal = Vec4ScalarMultiply(normal, -1.0f);
+                }
+                faceEquations[j] = normal;
+            }
+            BSPNode* thisTetLeafRoot = tetLeavesRoot + 7 * i;
+            for (int j = 0; j < 3; j++) //By entry face
+            {
+                BSPNode* thisFaceLeafRoot = thisTetLeafRoot + 2 * j;
+                for (int k = 0; k < 3; k++) //By comparison face
+                {
+                    if (j == k) continue;
+                    Vec4 thisEq = faceEquations[k];
+                    thisFaceLeafRoot->q0 = thisEq.x[0];
+                    thisFaceLeafRoot->q1 = thisEq.x[1];
+                    thisFaceLeafRoot->q2 = thisEq.x[2];
+                    thisFaceLeafRoot->q3 = thisEq.x[3];
+                    Tetrahedron thisFace = testFaces[k];
+                    if (k >= 2 || (j >= 2 && k >= 1)) thisFaceLeafRoot->l = (struct BSPNode*)(thisTetLeafRoot + 6);
+                    else thisFaceLeafRoot->l = (struct BSPNode*)(thisFaceLeafRoot + 1);
+                    int adjTetInd = tetAdj[i].v[k];
+                    if (adjTetInd < 0)
+                    {
+                        thisFaceLeafRoot->r = (struct BSPNode*)(outTetLeavesRoot + 7 * (-1 - adjTetInd));
+                    }
+                    else
+                    {
+                        Tetrahedron compTet = tets[adjTetInd];
+                        Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], -1, -1};
+                        Tetrahedron cFace1 = { compTet.v[0], compTet.v[2], -1, -1};
+                        Tetrahedron cFace2 = { compTet.v[1], compTet.v[2], -1, -1};
+                        int faceInd = 0;
+                        if (EdgesAreSame(thisFace, cFace0)) faceInd = 0;
+                        else if (EdgesAreSame(thisFace, cFace1)) faceInd = 1;
+                        else if (EdgesAreSame(thisFace, cFace2)) faceInd = 2;
+                        thisFaceLeafRoot->r = (struct BSPNode*)(tetLeavesRoot + 7 * adjTetInd + 2 * faceInd);
+                    }
+                    thisFaceLeafRoot++;
+                }
+            }
+            thisTetLeafRoot += 6;
+            thisTetLeafRoot->p0 = testTet.v[0];
+            thisTetLeafRoot->p1 = testTet.v[1];
+            thisTetLeafRoot->p2 = testTet.v[2];
+            thisTetLeafRoot->p3 = testTet.v[3];
+            thisTetLeafRoot->l = NULL;
+            thisTetLeafRoot->r = NULL;
+        }
+        for (int i = 0; i < nOutTets; i++)
+        {
+            Tetrahedron testTet = outTets[i];
+            Tetrahedron face0 = { testTet.v[0], testTet.v[1], -1, -1};
+            Tetrahedron face1 = { testTet.v[0], testTet.v[2], -1, -1};
+            Tetrahedron face2 = { testTet.v[1], testTet.v[2], -1, -1};
+            Tetrahedron testFaces[3] = { face0, face1, face2 };
+            Vec4 faceEquations[3];
+            for (int j = 0; j < 3; j++)
+            {
+                Tetrahedron thisFace = testFaces[j];
+                Vec4 facePoint0 = GetPointInTetrahedron(thisFace, points, &totalCenter, 0);
+                Vec4 facePoint1 = GetPointInTetrahedron(thisFace, points, &totalCenter, 1);
+                Vec4 facePoint2 = Vec4Add(facePoint0, totalNormal);
+                Vec4 normal = GeneratePlaneEquation(facePoint0, facePoint1, facePoint2);
+                //Normalisation to ensure the plane inequality must be ax + by + cz >= d for the point to be in the outer tetrahedron
+                float centerDot = Vec4Dot(normal, GetPointInTetrahedron(testTet, points, &totalCenter, 2 - j));
+                if (j == 0)
+                {
+                    if (centerDot >= normal.x[3])
+                    {
+                        normal = Vec4ScalarMultiply(normal, -1.0f);
+                    }
+                }
+                else
+                {
+                    if (centerDot < normal.x[3])
+                    {
+                        normal = Vec4ScalarMultiply(normal, -1.0f);
+                    }
+                }
+                faceEquations[j] = normal;
+            }
+            BSPNode* thisOutTetLeafRoot = outTetLeavesRoot + 7 * i;
+            for (int j = 0; j < 3; j++) //By entry face
+            {
+                BSPNode* thisOutFaceLeafRoot = thisOutTetLeafRoot + 2 * j;
+                for (int k = 0; k < 3; k++) //By comparison face
+                {
+                    if (j == k) continue;
+                    Vec4 thisEq = faceEquations[k];
+                    thisOutFaceLeafRoot->q0 = thisEq.x[0];
+                    thisOutFaceLeafRoot->q1 = thisEq.x[1];
+                    thisOutFaceLeafRoot->q2 = thisEq.x[2];
+                    thisOutFaceLeafRoot->q3 = thisEq.x[3];
+                    Tetrahedron thisFace = testFaces[k];
+                    if (k >= 2 || (j >= 2 && k >= 1)) thisOutFaceLeafRoot->l = (struct BSPNode*)(thisOutTetLeafRoot + 6);
+                    else thisOutFaceLeafRoot->l = (struct BSPNode*)(thisOutFaceLeafRoot + 1);
+                    int adjTetInd = outTetAdj[i].v[k];
+                    if (adjTetInd < 0)
+                    {
+                        Tetrahedron compTet = outTets[-1 - adjTetInd];
+                        Tetrahedron cFace1 = { compTet.v[0], compTet.v[2], -1, -1};
+                        Tetrahedron cFace2 = { compTet.v[1], compTet.v[2], -1, -1};
+                        int faceInd = 1;
+                        if (EdgesAreSame(thisFace, cFace1)) faceInd = 1;
+                        else if (EdgesAreSame(thisFace, cFace2)) faceInd = 2;
+                        thisOutFaceLeafRoot->r = (struct BSPNode*)(outTetLeavesRoot + 7 * (-1 - adjTetInd) + 2 * faceInd);
+                    }
+                    else
+                    {
+                        Tetrahedron compTet = tets[adjTetInd];
+                        Tetrahedron cFace0 = { compTet.v[0], compTet.v[1], -1, -1};
+                        Tetrahedron cFace1 = { compTet.v[0], compTet.v[2], -1, -1};
+                        Tetrahedron cFace2 = { compTet.v[1], compTet.v[2], -1, -1};
+                        int faceInd = 0;
+                        if (EdgesAreSame(thisFace, cFace0)) faceInd = 0;
+                        else if (EdgesAreSame(thisFace, cFace1)) faceInd = 1;
+                        else if (EdgesAreSame(thisFace, cFace2)) faceInd = 2;
+                        thisOutFaceLeafRoot->r = (struct BSPNode*)(tetLeavesRoot + 7 * adjTetInd + 2 * faceInd);
+                    }
+                    thisOutFaceLeafRoot++;
+                }
+            }
+            thisOutTetLeafRoot += 6;
+            thisOutTetLeafRoot->p0 = testTet.v[0];
+            thisOutTetLeafRoot->p1 = testTet.v[1];
+            thisOutTetLeafRoot->p2 = testTet.v[2];
+            thisOutTetLeafRoot->p3 = testTet.v[3];
+            thisOutTetLeafRoot->l = NULL;
+            thisOutTetLeafRoot->r = NULL;
+        }
+        //Fudge the first node for now
+        *bspTree = tetLeavesRoot[2];
+        bspTree->l = (struct BSPNode*)(tetLeavesRoot);
     }
-    //Fudge the first node for now
-    *bspTree = tetLeavesRoot[3];
-    bspTree->l = (struct BSPNode*)(tetLeavesRoot);
+    else if (dim == 1)
+    {
+        outTetLeavesRoot = tetLeavesRoot + 3 * nTets;
+        bspTreeConstructRoot = outTetLeavesRoot + 3 * nOutTets;
+        for (int i = 0; i < nTets; i++)
+        {
+            Tetrahedron testTet = tets[i];
+            int face0 = testTet.v[0];
+            int face1 = testTet.v[1];
+            int testFaces[2] = { face0, face1 };
+            Vec4 faceEquations[2];
+            Vec4 thisCenter = tetCenters[i];
+            for (int j = 0; j < 2; j++)
+            {
+                int thisFace = testFaces[j];
+                Vec4 facePoint0 = points[thisFace];
+                Vec4 normal = GeneratePlaneEquationFromNormal(facePoint0, thisCenter);
+                faceEquations[j] = normal;
+            }
+            BSPNode* thisTetLeafRoot = tetLeavesRoot + 3 * i;
+            for (int j = 0; j < 2; j++) //By entry face
+            {
+                BSPNode* thisFaceLeafRoot = thisTetLeafRoot + j;
+                for (int k = 0; k < 2; k++) //By comparison face
+                {
+                    if (j == k) continue;
+                    Vec4 thisEq = faceEquations[k];
+                    thisFaceLeafRoot->q0 = thisEq.x[0];
+                    thisFaceLeafRoot->q1 = thisEq.x[1];
+                    thisFaceLeafRoot->q2 = thisEq.x[2];
+                    thisFaceLeafRoot->q3 = thisEq.x[3];
+                    int thisFace = testFaces[k];
+                    if (k >= 1 || (j >= 1 && k >= 0)) thisFaceLeafRoot->l = (struct BSPNode*)(thisTetLeafRoot + 2);
+                    else thisFaceLeafRoot->l = (struct BSPNode*)(thisFaceLeafRoot + 1);
+                    int adjTetInd = tetAdj[i].v[k];
+                    if (adjTetInd < 0)
+                    {
+                        thisFaceLeafRoot->r = (struct BSPNode*)(outTetLeavesRoot + 3 * (-1 - adjTetInd));
+                    }
+                    else
+                    {
+                        Tetrahedron compTet = tets[adjTetInd];
+                        int cFace0 = compTet.v[0];
+                        int cFace1 = compTet.v[1];
+                        int faceInd = 0;
+                        if (thisFace == cFace0) faceInd = 0;
+                        else if (thisFace == cFace1) faceInd = 1;
+                        thisFaceLeafRoot->r = (struct BSPNode*)(tetLeavesRoot + 3 * adjTetInd + faceInd);
+                    }
+                    thisFaceLeafRoot++;
+                }
+            }
+            int outCols[4];
+            outCols[0] = testTet.v[0]; outCols[1] = testTet.v[1]; outCols[2] = testTet.v[2]; outCols[3] = testTet.v[3];
+            SortColourIndicesByLuma(outCols, 2);
+            thisTetLeafRoot += 2;
+            thisTetLeafRoot->p0 = outCols[0];
+            thisTetLeafRoot->p1 = outCols[1];
+            thisTetLeafRoot->p2 = outCols[2];
+            thisTetLeafRoot->p3 = outCols[3];
+            thisTetLeafRoot->l = NULL;
+            thisTetLeafRoot->r = NULL;
+        }
+        for (int i = 0; i < nOutTets; i++)
+        {
+            Tetrahedron testTet = outTets[i];
+            int face0 = testTet.v[0];
+            int face1 = testTet.v[1];
+            int testFaces[2] = { face0, face1 };
+            Vec4 faceEquation;
+            for (int j = 0; j < 2; j++)
+            {
+                int thisFace = testFaces[j];
+                Vec4 facePoint0;
+                if (thisFace < 0) continue;
+                else facePoint0 = points[thisFace];
+                Vec4 normal = GeneratePlaneEquationFromNormal(facePoint0, totalCenter);
+                faceEquation = Vec4ScalarMultiply(normal, -1.0f);
+            }
+            BSPNode* thisOutTetLeafRoot = outTetLeavesRoot + 3 * i;
+            for (int j = 0; j < 2; j++) //By entry face
+            {
+                BSPNode* thisOutFaceLeafRoot = thisOutTetLeafRoot + j;
+                for (int k = 0; k < 2; k++) //By comparison face
+                {
+                    if (j == k) continue;
+                    Vec4 thisEq = faceEquation;
+                    thisOutFaceLeafRoot->q0 = thisEq.x[0];
+                    thisOutFaceLeafRoot->q1 = thisEq.x[1];
+                    thisOutFaceLeafRoot->q2 = thisEq.x[2];
+                    thisOutFaceLeafRoot->q3 = thisEq.x[3];
+                    int thisFace = testFaces[k];
+                    if (k >= 1 || (j >= 1 && k >= 0)) thisOutFaceLeafRoot->l = (struct BSPNode*)(thisOutTetLeafRoot + 2);
+                    else thisOutFaceLeafRoot->l = (struct BSPNode*)(thisOutFaceLeafRoot + 1);
+                    int adjTetInd = outTetAdj[i].v[k];
+                    Tetrahedron compTet = tets[adjTetInd];
+                    int cFace0 = compTet.v[0];
+                    int cFace1 = compTet.v[1];
+                    int faceInd = 0;
+                    if (thisFace == cFace0) faceInd = 0;
+                    else if (thisFace == cFace1) faceInd = 1;
+                    thisOutFaceLeafRoot->r = (struct BSPNode*)(tetLeavesRoot + 3 * adjTetInd + faceInd);
+                    thisOutFaceLeafRoot++;
+                }
+            }
+            thisOutTetLeafRoot += 2;
+            thisOutTetLeafRoot->p0 = testTet.v[0];
+            thisOutTetLeafRoot->p1 = testTet.v[1];
+            thisOutTetLeafRoot->p2 = testTet.v[2];
+            thisOutTetLeafRoot->p3 = testTet.v[3];
+            thisOutTetLeafRoot->l = NULL;
+            thisOutTetLeafRoot->r = NULL;
+        }
+        //Fudge the first node for now
+        *bspTree = tetLeavesRoot[1];
+        bspTree->l = (struct BSPNode*)(tetLeavesRoot);
+    }
+
     free(outTets);
     free(tetAdj);
     free(outTetAdj);
@@ -2755,8 +3725,9 @@ static void prepare(GeglOperation* operation)
     }
     if (pal != ADAPTIVE && dmet < FLOYD_STEINBERG)
     {
-        TetrahedrisePoints((Vec4*)srcpalette, palSize, &numTets);
-        CreateBSPTreeFromTetrahedrons((Vec4*)srcpalette, palSize, tetrahedra, numTets, (Vec4*)(&centralColour));
+        int dims = GetDimensionality((Vec4*)srcpalette, palSize);
+        TetrahedrisePoints((Vec4*)srcpalette, palSize, dims, &numTets);
+        CreateBSPTreeFromTetrahedrons((Vec4*)srcpalette, palSize, tetrahedra, numTets, dims, (Vec4*)(&centralColour));
     }
 }
 
@@ -2796,8 +3767,9 @@ static gboolean process(GeglOperation* op, GeglBuffer* inBuf, GeglBuffer* outBuf
             }
             if (dmet < FLOYD_STEINBERG)
             {
-                TetrahedrisePoints((Vec4*)srcpalette, palSize, &numTets);
-                CreateBSPTreeFromTetrahedrons((Vec4*)srcpalette, palSize, tetrahedra, numTets, (Vec4*)(&centralColour));
+                int dims = GetDimensionality((Vec4*)srcpalette, palSize);
+                TetrahedrisePoints((Vec4*)srcpalette, palSize, dims, &numTets);
+                CreateBSPTreeFromTetrahedrons((Vec4*)srcpalette, palSize, tetrahedra, numTets, dims, (Vec4*)(&centralColour));
             }
             hasFoundBestColours = 1;
         }
