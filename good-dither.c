@@ -2364,11 +2364,14 @@ static BSPNode* CreateBSPTreeFromTetrahedrons(Vec4* points, int nPoints, Tetrahe
                     thisFaceLeafRoot++;
                 }
             }
+            int outCols[4];
+            outCols[0] = testTet.v[0]; outCols[1] = testTet.v[1]; outCols[2] = testTet.v[2]; outCols[3] = testTet.v[3];
+            SortColourIndicesByLuma(outCols, 3);
             thisTetLeafRoot += 6;
-            thisTetLeafRoot->p0 = testTet.v[0];
-            thisTetLeafRoot->p1 = testTet.v[1];
-            thisTetLeafRoot->p2 = testTet.v[2];
-            thisTetLeafRoot->p3 = testTet.v[3];
+            thisTetLeafRoot->p0 = outCols[0];
+            thisTetLeafRoot->p1 = outCols[1];
+            thisTetLeafRoot->p2 = outCols[2];
+            thisTetLeafRoot->p3 = outCols[3];
             thisTetLeafRoot->l = NULL;
             thisTetLeafRoot->r = NULL;
         }
@@ -2446,11 +2449,14 @@ static BSPNode* CreateBSPTreeFromTetrahedrons(Vec4* points, int nPoints, Tetrahe
                     thisOutFaceLeafRoot++;
                 }
             }
+            int outCols[4];
+            outCols[0] = testTet.v[0]; outCols[1] = testTet.v[1]; outCols[2] = testTet.v[2]; outCols[3] = testTet.v[3];
+            SortColourIndicesByLuma(outCols, 2);
             thisOutTetLeafRoot += 6;
-            thisOutTetLeafRoot->p0 = testTet.v[0];
-            thisOutTetLeafRoot->p1 = testTet.v[1];
-            thisOutTetLeafRoot->p2 = testTet.v[2];
-            thisOutTetLeafRoot->p3 = testTet.v[3];
+            thisOutTetLeafRoot->p0 = outCols[0];
+            thisOutTetLeafRoot->p1 = outCols[1];
+            thisOutTetLeafRoot->p2 = outCols[2];
+            thisOutTetLeafRoot->p3 = outCols[3];
             thisOutTetLeafRoot->l = NULL;
             thisOutTetLeafRoot->r = NULL;
         }
