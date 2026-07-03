@@ -998,7 +998,7 @@ static int PointIsInCircumsphere(Vec4 point, Vec4 tetPoint0, Vec4 tetPoint1, Vec
 }
 
 //0 -> outside, 1 -> on edge, 2 -> in circle
-int PointIsInCircumcircle(Vec4 point, Vec4 tetPoint0, Vec4 tetPoint1, Vec4 tetPoint2)
+static int PointIsInCircumcircle(Vec4 point, Vec4 tetPoint0, Vec4 tetPoint1, Vec4 tetPoint2)
 {
     //Rebased points
     Vec4 tetPoint0T = Vec4Sub(tetPoint0, point);
