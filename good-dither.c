@@ -1200,6 +1200,8 @@ static Tetrahedron* TetrahedrisePoints(Vec4* points, int nPoints, int dim, int* 
     int* badTets = malloc(nPoints * 32 * sizeof(int));
     int* badFaces = malloc(nPoints * 4 * sizeof(int));
     Vec4* modPoints = malloc(nPoints * sizeof(Vec4));
+    float skewOffset = 0.0f;
+    tryTetrahedrisingAgain:
     Tetrahedron superTet = { -1, -2, -3, -4 };
     tetList[0] = superTet;
     int nTet = 1;
@@ -1215,7 +1217,7 @@ static Tetrahedron* TetrahedrisePoints(Vec4* points, int nPoints, int dim, int* 
         {
             Vec4 inPoint = points[i];
             Vec4 outPoint;
-            float addAmt = (inPoint.x[1] + inPoint.x[2]) * 0.0001f;
+            float addAmt = (inPoint.x[1] + inPoint.x[2]) * skewOffset;
             outPoint.x[0] = inPoint.x[0] + addAmt;
             outPoint.x[1] = inPoint.x[1] + addAmt;
             outPoint.x[2] = inPoint.x[2] + addAmt;
@@ -1256,7 +1258,7 @@ static Tetrahedron* TetrahedrisePoints(Vec4* points, int nPoints, int dim, int* 
             Vec4 transformPoint = { fac1, fac2, 0.0f, 0.0f};
             Vec4 outPoint;
             //Skew transform to break symmetries
-            float addAmt = transformPoint.x[1] * 0.0001f;
+            float addAmt = transformPoint.x[1] * skewOffset;
             outPoint.x[0] = transformPoint.x[0] + addAmt;
             outPoint.x[1] = transformPoint.x[1] + addAmt;
             outPoint.x[2] = 0.0f;
@@ -1333,12 +1335,40 @@ static Tetrahedron* TetrahedrisePoints(Vec4* points, int nPoints, int dim, int* 
         for (int i = 0; i < nPoints; i++)
         {
             Vec4 testPoint = modPoints[i];
+            int pointSeenBefore = 0;
+            for (int j = 0; j < i; j++)
+            {
+                if (testPoint.x[0] == modPoints[j].x[0] && testPoint.x[1] == modPoints[j].x[1] && testPoint.x[2] == modPoints[j].x[2])
+                {
+                    pointSeenBefore = 1;
+                    break;
+                }
+            }
+            if (pointSeenBefore) continue;
+            int badPointCount = 0;
             memset(badTets, 0, nTet * sizeof(int));
             //Find all invalidated tetrahedra
             for (int j = 0; j < nTet; j++)
             {
                 Tetrahedron testTet = tetList[j];
                 int csppos = PointIsInCircumsphere(testPoint, GetPointInTetrahedron(testTet, modPoints, superTetPoints, 0), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 1), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 2), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 3));
+                if (csppos == 1)
+                {
+                    badPointCount++;
+                    if (badPointCount > 2)
+                    {
+                        if (skewOffset <= 0.0f)
+                        {
+                            skewOffset = -skewOffset;
+                            skewOffset += 0.00001f;
+                        }
+                        else
+                        {
+                            skewOffset = -skewOffset;
+                        }
+                        goto tryTetrahedrisingAgain;
+                    }
+                }
                 if (csppos >= 2)
                 {
                     badTets[j] = 1;
@@ -1448,12 +1478,40 @@ static Tetrahedron* TetrahedrisePoints(Vec4* points, int nPoints, int dim, int* 
         for (int i = 0; i < nPoints; i++)
         {
             Vec4 testPoint = modPoints[i];
+            int pointSeenBefore = 0;
+            for (int j = 0; j < i; j++)
+            {
+                if (testPoint.x[0] == modPoints[j].x[0] && testPoint.x[1] == modPoints[j].x[1])
+                {
+                    pointSeenBefore = 1;
+                    break;
+                }
+            }
+            if (pointSeenBefore) continue;
+            int badPointCount = 0;
             memset(badTets, 0, nTet * sizeof(int));
             //Find all invalidated triangles
             for (int j = 0; j < nTet; j++)
             {
                 Tetrahedron testTet = tetList[j];
                 int csppos = PointIsInCircumcircle(testPoint, GetPointInTetrahedron(testTet, modPoints, superTetPoints, 0), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 1), GetPointInTetrahedron(testTet, modPoints, superTetPoints, 2));
+                if (csppos == 1)
+                {
+                    badPointCount++;
+                    if (badPointCount > 2)
+                    {
+                        if (skewOffset <= 0.0f)
+                        {
+                            skewOffset = -skewOffset;
+                            skewOffset += 0.00001f;
+                        }
+                        else
+                        {
+                            skewOffset = -skewOffset;
+                        }
+                        goto tryTetrahedrisingAgain;
+                    }
+                }
                 if (csppos >= 2)
                 {
                     badTets[j] = 1;
@@ -3400,23 +3458,39 @@ static void GetBestPalette(ColourRGBA8* pal, int numColours, ColourRGBA* pixels,
             cumProb += probmod * probs[j] * ((double)weights[j]);
             probs[j] = cumProb;
         }
-        double p = ((double)((RNGUpdateFloat() * 0.5f) + 0.5f)) * cumProb;
-        int ind = totalSamples/2;
-        int lBound = 0;
-        int uBound = totalSamples - 1;
-        while (ind != lBound || ind != uBound)
+        while (true)
         {
-            if (p < probs[ind])
+            double p = ((double)((RNGUpdateFloat() * 0.5f) + 0.5f)) * cumProb;
+            int ind = totalSamples/2;
+            int lBound = 0;
+            int uBound = totalSamples - 1;
+            while (ind != lBound || ind != uBound)
             {
-                uBound = ind;
+                if (p < probs[ind])
+                {
+                    uBound = ind;
+                }
+                else
+                {
+                    lBound = ind + 1;
+                }
+                ind = lBound + ((uBound - lBound)/2);
             }
-            else
+            int meanSeenBefore = 0;
+            for (int j = 0; j < i; j++)
             {
-                lBound = ind + 1;
+                if (means[j].mean.L == csamples[ind].L && means[j].mean.a == csamples[ind].a && means[j].mean.b == csamples[ind].b)
+                {
+                    meanSeenBefore = 1;
+                    break;
+                }
             }
-            ind = lBound + ((uBound - lBound)/2);
+            if (!meanSeenBefore)
+            {
+                means[i].mean = csamples[ind];
+                break;
+            }
         }
-        means[i].mean = csamples[ind];
     }
 
     free(probs);
